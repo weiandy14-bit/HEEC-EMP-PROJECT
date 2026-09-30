@@ -23,6 +23,17 @@ test('snapForward：非工作時間對齊至下一工作瞬間', () => {
   assert.equal(fromTaipei(snapForward(taipei('2027-01-04T12:00'), cal)), '2027-01-04 13:00');
 });
 
+test('snapBackward：對齊至前一工作結束邊界', () => {
+  // 週六 10:00 → 前一工作結束邊界 週五 18:00
+  assert.equal(fromTaipei(snapBackward(taipei('2027-01-09T10:00'), cal)), '2027-01-08 18:00');
+  // 午休 12:30 → 12:00（上午時段結束）
+  assert.equal(fromTaipei(snapBackward(taipei('2027-01-04T12:30'), cal)), '2027-01-04 12:00');
+  // 工作結束邊界 18:00 → 原值（半開區間右端為有效完成邊界）
+  assert.equal(fromTaipei(snapBackward(taipei('2027-01-04T18:00'), cal)), '2027-01-04 18:00');
+  // 週一 09:00（一週工作起點）→ 前一工作結束邊界 上週五 18:00
+  assert.equal(fromTaipei(snapBackward(taipei('2027-01-11T09:00'), cal)), '2027-01-08 18:00');
+});
+
 test('addWorking：跨午休與週末', () => {
   // 週一 09:00 + 8h = 週一 18:00
   assert.equal(fromTaipei(addWorking(taipei('2027-01-04T09:00'), DAY, cal)), '2027-01-04 18:00');

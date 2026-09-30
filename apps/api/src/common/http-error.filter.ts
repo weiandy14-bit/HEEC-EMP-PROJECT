@@ -48,7 +48,7 @@ export class HttpErrorFilter implements ExceptionFilter {
       };
     } else {
       // 未預期錯誤：不外洩堆疊
-      // eslint-disable-next-line no-console
+       
       console.error('[unhandled]', correlationId, exception);
       envelope = {
         code: 'internal_error',

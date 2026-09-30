@@ -4,6 +4,7 @@ import {
   schedule,
   addWorking,
   subtractWorking,
+  workingMinutesBetween,
   hashInput,
   hashResult,
   type ScheduleInput,
@@ -65,6 +66,46 @@ test('T02：基設 A 5d、協調 B 3d SS+1d → B 於 A 開始後一工作日啟
   assert.equal(b.earlyStart, addWorking(a.earlyStart, DAY, CAL));
   // 允許重疊：B 開始早於 A 完成
   assert.ok(b.earlyStart < a.earlyFinish);
+});
+
+test('R03 平行協調：基本設計 5d 與 建築/結構/MEP 同步協調 3d 透過 SS+1d 並行，協調在基本設計完成前開始', () => {
+  // 對齊規格 §6（3.0 同步協調與 2.x 以 SS 並行）與 §10 R03、案例 T02。
+  // 基本設計(BD) 與 同步協調(CO) 皆連向掛件錨點；CO 以 SS+1d 依附 BD。
+  const anchor = { taskId: 'ANCHOR', instant: taipei('2027-02-01T18:00') };
+  const input: ScheduleInput = {
+    calendars: [CAL],
+    tasks: [
+      anchorTask('ANCHOR'),
+      { id: 'BD', type: 'task', durationMinutes: 5 * DAY, calendarId: 'CAL' }, // 基本設計 5 工作日
+      { id: 'CO', type: 'task', durationMinutes: 3 * DAY, calendarId: 'CAL' }, // 同步協調 3 工作日
+    ],
+    dependencies: [
+      dep('BD', 'CO', 'SS', DAY), // 同步協調在基本設計開始後一工作日啟動
+      dep('BD', 'ANCHOR', 'FS'),
+      dep('CO', 'ANCHOR', 'FS'),
+    ],
+    anchor,
+  };
+  const r = schedule(input);
+  assert.equal(r.ok, true);
+  if (!r.ok) return;
+  const bd = byId(r, 'BD');
+  const co = byId(r, 'CO');
+
+  // 明列兩項工作最早可行的開始與完成時間（Asia/Taipei 掛鐘時間）
+  assert.equal(fromTaipei(bd.earlyStart), '2027-01-26 09:00'); // 基本設計 開始（週二）
+  assert.equal(fromTaipei(bd.earlyFinish), '2027-02-01 18:00'); // 基本設計 完成（5 工作日、週末略過）
+  assert.equal(fromTaipei(co.earlyStart), '2027-01-26 18:00'); // 同步協調 開始（= 基設開始 + 1 工作日）
+  assert.equal(fromTaipei(co.earlyFinish), '2027-01-29 18:00'); // 同步協調 完成（3 工作日，早於基設完成）
+
+  // SS+1d：同步協調恰於基本設計開始後「一個工作日（480 分）」啟動
+  assert.equal(co.earlyStart, addWorking(bd.earlyStart, DAY, CAL));
+  assert.equal(workingMinutesBetween(bd.earlyStart, co.earlyStart, CAL), DAY);
+
+  // 平行證明：同步協調在基本設計「完成之前」就已開始（重疊進行）
+  assert.ok(co.earlyStart < bd.earlyFinish, '同步協調應在基本設計完成前開始');
+  // 同步協調也早於基本設計完成前結束（真正並行，非串接）
+  assert.ok(co.earlyFinish < bd.earlyFinish, '同步協調應早於基本設計完成');
 });
 
 test('T03：FS−4h 與午休 → 後續可在前項完成前 4 工作小時開始', () => {

@@ -169,8 +169,8 @@ export function schedule(input: ScheduleInput): ScheduleResult {
     const t = ctx.tasks.get(id)!;
     const cal = calOf(ctx, t);
 
-    let lfCandidates: Minute[] = [];
-    let lsCandidates: Minute[] = [];
+    const lfCandidates: Minute[] = [];
+    const lsCandidates: Minute[] = [];
 
     if (id === input.anchor.taskId) {
       lfCandidates.push(anchorInstant); // 錨點固定
@@ -212,8 +212,8 @@ export function schedule(input: ScheduleInput): ScheduleResult {
     const t = ctx.tasks.get(id)!;
     const cal = calOf(ctx, t);
 
-    let esCandidates: Minute[] = [projectStartFloor];
-    let efCandidates: Minute[] = [];
+    const esCandidates: Minute[] = [projectStartFloor];
+    const efCandidates: Minute[] = [];
 
     for (const d of ctx.inEdges.get(id) ?? []) {
       if (!scheduled.has(d.predecessorId)) continue;
@@ -238,7 +238,7 @@ export function schedule(input: ScheduleInput): ScheduleResult {
 
     let es = Math.max(...esCandidates);
     if (t.actualStart !== undefined) es = t.actualStart; // 鎖定
-    let ef = t.actualFinish !== undefined ? t.actualFinish : addWorking(es, t.durationMinutes, cal);
+    const ef = t.actualFinish !== undefined ? t.actualFinish : addWorking(es, t.durationMinutes, cal);
     ES.set(id, es);
     EF.set(id, ef);
   }

@@ -11,12 +11,17 @@
     "build:scheduler": "npm run build -w @heec/scheduler",
     "build:api": "npm run build:scheduler && npm run build -w @heec/api",
     "build": "npm run build:api",
-    "test": "npm run test -w @heec/scheduler && npm run test -w @heec/api",
-    "test:scheduler": "npm run test -w @heec/scheduler",
-    "test:api": "npm run test -w @heec/api"
+    "lint": "eslint packages/scheduler/src packages/scheduler/test apps/api/src",
+    "typecheck": "npm run typecheck -w @heec/scheduler && npm run typecheck -w @heec/api",
+    "test": "npm run test -w @heec/scheduler",
+    "test:scheduler": "npm run test -w @heec/scheduler"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^22.7.0",
+    "eslint": "^9.39.5",
+    "globals": "^17.12.0",
     "typescript": "^5.6.0",
-    "@types/node": "^22.7.0"
+    "typescript-eslint": "^8.71.0"
   }
 }

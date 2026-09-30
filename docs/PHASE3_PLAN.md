@@ -80,8 +80,8 @@
 - **預期結果**：(a) 兩週查詢皆返回該項（相交）；(b) 逾期未完成於後續週持續顯示置頂；(c) 僅一列（`U(project,source_key)`），非以 source_key 決定週別。
 - **完成定義**：相交顯示 + 逾期持續顯示 + 去重（唯一鍵）+ 完成回寫測試通過。
 
-### P3-07 警示引擎去重與分級（含追加條件）
-- **功能**：fingerprint=`rule_code+entity+baseline+period`，同指紋更新 occurrence/last_seen 不重建；**「已逾計畫完成且未完成」→ overdue**；**相對 Baseline 落後 ≥4 工作日 → behind**（1–3 工作日 attention）；**兩者同時 → overdue**；ack/snooze/close 之理由、期限、歷史分別驗證。
+### P3-07 警示引擎去重與分級（含追加條件）　（狀態：✅ 已實作，9 整合測試通過並納入 CI）
+- **功能**：fingerprint=`rule_code+project+entity+baseline+period`，同指紋更新 occurrence/last_seen 不重建；**「已逾計畫完成且未完成」→ overdue**；**相對 Baseline 落後 ≥4 工作日 → behind**（1–3 工作日 attention）；**兩者同時 → overdue**；ack/snooze/close 之理由、期限、歷史分別驗證。
 - **資料表·API**：`alerts`、`alert_rules`；`GET /alerts`、`POST /alerts/{a}/ack|snooze|assign|close`。
 - **測試輸入**：(a) 落後 3 工作日；(b) 落後 4 工作日；(c) 已逾計畫完成且未完成；(d) 同時逾期且落後 ≥4；(e) 同指紋兩次；(f) ack 無理由；(g) snooze 無到期；(h) close 後查歷史。
 - **預期結果**：(a) attention；(b) behind；(c) overdue；(d) overdue（優先）；(e) occurrence=2 且不新增列；(f)(g) → 422；(h) 狀態轉換與理由/期限入歷史、可查。

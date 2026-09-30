@@ -40,3 +40,8 @@ FROM (VALUES
   ('APPROVE',       3, '核可')
 ) AS v(sc, seq, nm)
 ON CONFLICT DO NOTHING;
+
+-- 警示規則（排程滑動）供 Phase 3 警示引擎使用
+INSERT INTO alert_rules (org_id, code, severity, condition_type, scope, enabled, version_no)
+VALUES ('11111111-1111-1111-1111-111111111111', 'SCHEDULE_SLIP', 'attention', 'schedule_slip', 'task', true, 1)
+ON CONFLICT DO NOTHING;

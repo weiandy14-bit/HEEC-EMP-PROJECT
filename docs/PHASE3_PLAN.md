@@ -94,15 +94,15 @@
 - **預期結果**：(a) health=behind；(b) 無「業務已寫但事件遺失」或反之；(c) 重複作用被防止（冪等）；(d) 退避重試成功或達上限進 dead-letter。
 - **完成定義**：health 計算 + 同交易 + 冪等/重試/dead-letter 測試通過。
 
-### P3-09 RBAC 與跨案 IDOR（真實資料庫整合測試）
-- **功能**：Lead 審查核准、Engineer 僅本人實績、QA 審核、Viewer 只讀；跨案存取拒絕（服務層逐筆 scope）。
+### P3-09 RBAC 與跨案 IDOR（真實資料庫整合測試）　（狀態：✅ 已實作，12 整合測試通過並納入 CI）
+- **功能**：Lead 審查核准、Engineer 僅本人實績、QA 審核、Viewer 只讀；跨案存取拒絕（服務層逐筆以 org_id+project_id+id scope，查無列即 404，不洩存在性）。
 - **資料表·API**：全 Phase 3 端點。
 - **測試輸入**（於真實 DB 整合測試執行）：(a) Engineer 改他人審查；(b) Viewer 寫交付物；(c) A 案使用者存取 B 案 review/deliverable。
 - **預期結果**：(a)(b) → 403；(c) → 404（不洩存在性）；皆記稽核。
 - **完成定義**：每類端點 ≥1 權限負例 + ≥1 跨案 IDOR 負例，於真實資料庫整合測試通過。
 
-### P3-10 全數納入 CI
-- **功能**：Phase 3 API 整合測試層（真實 PostgreSQL）＋對應 migration/seed 納入 CI。
+### P3-10 全數納入 CI　（狀態：✅ 已完成；CI 於全新 PostgreSQL 執行全部 59 整合測試 + scheduler 單元 + DB 規則 + smoke）
+- **功能**：Phase 3 API 整合測試層（真實 PostgreSQL）＋對應 migration/seed 納入 CI。`test:integration` 以 `test/integration/*.test.mjs` glob 自動納入新增測試；`db/apply.sh` 以 `migrations/*.sql` glob 自動納入 0017。
 - **資料表·API**：CI workflow 新增「API 整合測試」步驟（沿用 service container + migrations + seed + DB 規則測試）。
 - **測試輸入**：CI 於全新 DB 執行 P3-01～P3-09 整合測試 + 既有 scheduler 單元、DB 規則、smoke。
 - **預期結果**：全部通過方為綠；任一失敗即轉紅。

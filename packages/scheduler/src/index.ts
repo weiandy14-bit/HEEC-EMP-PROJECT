@@ -5,6 +5,7 @@ export {
   subtractWorking,
   workingMinutesBetween,
   countWorkingDays,
+  lateDays,
   snapForward,
   snapBackward,
 } from './calendar.ts';

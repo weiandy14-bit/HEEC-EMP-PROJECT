@@ -73,6 +73,9 @@ jobs:
       - name: Seed development data
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/seed_dev.sql
 
+      - name: DB rule tests (G9 baseline immutability, G10 actual consistency)
+        run: bash db/run-tests.sh
+
       - name: Start API
         run: |
           node apps/api/dist/main.js > /tmp/api.log 2>&1 &

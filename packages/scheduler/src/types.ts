@@ -75,6 +75,12 @@ export interface Task {
   actualStart?: Minute;
   /** 實際完成（已鎖定，代表 100%）。 */
   actualFinish?: Minute;
+  /**
+   * 剩餘工時（工作分鐘）。用於「進行中」工作（已 actualStart、未 actualFinish）
+   * 之剩餘片段預測：自 max(statusDate, actualStart) 起以剩餘工時前推完成。
+   * 未提供時，進行中工作退回以全工期自 actualStart 前推（不套用狀態日）。
+   */
+  remainingMinutes?: Minute;
 }
 
 export interface Dependency {

@@ -182,6 +182,14 @@ export function workingMinutesBetween(a: Minute, b: Minute, cal: Calendar): Minu
   return total;
 }
 
+/**
+ * 逾期工作日數（§7）：late_days = max(0, countWorkingDays(baselineFinish, forecastFinish))。
+ * forecast 不晚於 baseline 時為 0（未逾期）。
+ */
+export function lateDays(baselineFinish: Minute, forecastFinish: Minute, cal: Calendar): number {
+  return Math.max(0, countWorkingDays(baselineFinish, forecastFinish, cal));
+}
+
 /** 計算 [a,b) 涵蓋之工作日數（用於逾期天數，見 §7 late_days）。 */
 export function countWorkingDays(a: Minute, b: Minute, cal: Calendar): number {
   if (b <= a) return 0;

@@ -33,27 +33,28 @@
 | 關係 FF | T04 | ✅ |
 | 關係 SF | T04 | ✅ |
 | 正 lag | T02、R03（SS+1d） | ✅ |
-| 負 lag | T03（FS−4h） | ✅ |
-| 負 lag 上限（D06）拒絕 | — | ❌ 缺口 |
-| 負 lag 導致非法日期拒絕 | — | ❌ 缺口 |
+| 負 lag | T03（FS−4h）、G2 正例 | ✅ |
+| 負 lag 上限（D06）拒絕 | G2（自訂上限、預設 14400 分） | ✅ |
 | 假日（專案日曆） | T05、`假日例外…` | ✅ |
 | 個人休假/資源容量扣除 | — | ❌ 缺口（屬負荷層 §7 負荷，尚未實作） |
 | 循環相依 | T06 | ✅ |
 | 孤立/未連通錨點 | T06 | ✅ |
 | 負工期 | T06 | ✅ |
-| 限制 MFO | T07 | ✅ |
-| 限制 SNET/SNLT/FNET/FNLT/MSO/ALAP | — | ❌ 缺口（僅 MFO 有案例） |
+| 限制 MFO/FNLT/SNET（原規格）+ ASAP | T07、G1（正+負例） | ✅ |
+| 限制 SNLT/FNET/MSO/ALAP（新增，不改規則） | G1（正+負例） | ✅ |
 | 實績鎖定（actualStart/Finish） | T08 | ✅ |
-| statusDate 剩餘重排 | T08（有帶入 statusDate） | ⚠️ 部分（未針對「進行中、僅剩餘段重排」單獨斷言） |
+| statusDate 進行中剩餘重排 | G6（正+負例） | ✅ |
 | 總浮時 total float | T01、R03、T10 | ✅ |
-| 自由浮時 free float | R03（間接） | ⚠️ 部分（無多後續分歧的 free float 專測） |
+| 自由浮時 free float | G3（驅動 0 / 非驅動 >0，與 total 區辨） | ✅ |
 | 關鍵路徑 critical | T01、R03、T10 | ✅ |
-| 超期關鍵（負浮時標記） | — | ❌ 缺口 |
+| 超期關鍵（負浮時標記） | — | ❌ 缺口（G5，P1） |
 | 冪等 input/result hash | T09 | ✅ |
-| 跨日曆相依（UTC 比較後換算） | — | ❌ 缺口 |
+| 跨日曆相依（UTC 比較後換算） | G4（台北×UTC 日曆） | ✅ |
 | 工作時間引擎（add/subtract/between/countDays/snap） | calendar.test.ts | ✅ |
-| Baseline 不可變/late_days | — | ❌ 缺口（DB/服務層職責，非純函式 scheduler） |
-| property-based（拓樸序、界限、往返、hash 一致，§10） | — | ❌ 缺口 |
+| late_days（§7 逾期工作日） | G9（純函式，正+邊界） | ✅ |
+| Baseline 不可變（快照 UPDATE/DELETE 拒絕） | G9（DB 觸發器，`db/tests`） | ✅ |
+| 實績一致性（完成=100↔完成日期） | G10（DB CHECK，`db/tests`） | ✅ |
+| property-based（拓樸序、界限、往返、hash 一致，§10） | — | ❌ 缺口（G7，P1） |
 
 ## 缺口與後續補強計畫（依優先級）
 
@@ -62,18 +63,18 @@
 - **P1｜Phase 2 收尾**：健全性與品質門檻（§10 覆蓋率、property-based），Phase 2 完成定義的一部分。
 - **P2｜跨階段/服務層**：屬 DB/服務層或後續階段職責，於相應階段的整合測試層驗證。
 
-| # | 缺口 | 對應規格 | 優先級 |
-|---|---|---|---|
-| G1 | **限制型別全覆蓋** SNET/SNLT/FNET/FNLT/MSO/ALAP（順向下界、逆向上界、與錨點衝突各一） | §7 關係界限/限制；§7 schedule 偽碼「apply MustFinishOn/…」 | **P0** |
-| G2 | **負 lag 邊界**：超過 D06 上限（預設 30 工作日 =14400 分）→ `lag_out_of_bounds`；負 lag 造成 start>finish/非法日期 → 拒絕 | D06；§7「負 lag 可重疊，但不得違反 start≤finish」 | **P0** |
-| G3 | **free float 專測**：一前置分歧至多後續，驗證單一任務延後而不推遲任一後續 earliest 的最小 slack；並與 total float 區辨 | §7「自由浮時為本任務延後而不推遲任一後續 earliest 的最小 slack」 | **P0** |
-| G4 | **跨日曆相依**：前置與後續採不同日曆/時區，lag 以邊指定日曆換算，界限以 UTC 事件比較後換算 | §7「跨日曆相依比較 UTC 事件後轉換」；`lag` 使用相依邊指定日曆 | **P0** |
-| G5 | **超期關鍵（負浮時標記）**：MFO/固定實績造成負浮時，`critical=true` 且標記超期關鍵 | §7「若已有負浮時需標為超期關鍵」 | P1 |
-| G6 | **statusDate 進行中重排**：actualStart 已設、未完成，僅剩餘段依 statusDate 之後重排，前段固定 | §7「狀態日之前已完成片段固定，剩餘片段重排」 | P1 |
-| G7 | **property-based**（隨機 DAG+日曆：拓樸序不變、相依界限恆成立、add/subtract 往返一致、相同輸入同 hash） | §10「algorithm unit + property-based」；核心覆蓋≥90% | P1 |
-| G8 | **多案隔離效能**：多專案不同日曆併行重算，版本隔離與 P95（T10 延伸） | §7 T10；§1 驗收尺度 | P2 |
-| G9 | **Baseline 不可變 / late_days**：基準快照不可 UPDATE、`late_days=max(0,countWorkingDays(baseline.finish,forecast.finish))` | §7 基準/進度；R05 | P2（服務層） |
-| G10 | **實績鎖定進階**：完成=100 須完成日期、完成日期須 100% 的一致性（scheduler 已鎖定 actual，DB CHECK 已有；需整合測試斷言） | §7 進度規則 | P2（服務層） |
+| # | 缺口 | 對應規格 | 優先級 | 狀態 |
+|---|---|---|---|---|
+| G1 | 限制型別全覆蓋 SNET/SNLT/FNET/FNLT/MSO/ALAP | §7 關係界限/限制 | P0 | ✅ 已完成（`constraints.test.ts`，14 測試） |
+| G2 | 負 lag 邊界：超過 D06 上限 → `lag_out_of_bounds` | D06；§7 | P0 | ✅ 已完成（`phase2.test.ts`） |
+| G3 | free float 專測，與 total float 區辨 | §7 自由浮時 | P0 | ✅ 已完成（`phase2.test.ts`） |
+| G4 | 跨日曆相依：UTC 事件比較後換算 | §7 跨日曆 | P0 | ✅ 已完成（`phase2.test.ts`） |
+| G5 | 超期關鍵（負浮時標記） | §7 | P1 | ❌ 未完成 |
+| G6 | statusDate 進行中剩餘重排 | §7 狀態日 | P1 | ✅ 已完成（`phase2.test.ts`，正+負） |
+| G7 | property-based（隨機 DAG+日曆） | §10 | P1 | ❌ 未完成 |
+| G8 | 多案隔離效能（T10 延伸） | §7 T10；§1 | P2 | ❌ 未完成 |
+| G9 | Baseline 不可變 / late_days | §7 基準/進度；R05 | P2 | ✅ 已完成（late_days 純函式 + DB 觸發器 `db/tests/g9…`） |
+| G10 | 實績一致性（完成=100↔完成日期） | §7 進度規則 | P2 | ✅ 已完成（DB CHECK `db/tests/g10…`） |
 
-**P0 為本專案下一步（Phase 2 收尾）優先補強對象**：G1 限制型別、G2 負 lag 邊界、G3 free float、G4 跨日曆。
-上述缺口皆不影響本輪已接受之驗收（CI 門檻、SS 平行案例、smoke 正負例）。
+**本輪（Phase 2 收尾）已完成**：G1、G2、G3、G4、G6、G9、G10。
+**剩餘缺口**：G5 超期關鍵（P1）、G7 property-based（P1）、G8 多案效能（P2）；不影響已接受之驗收。

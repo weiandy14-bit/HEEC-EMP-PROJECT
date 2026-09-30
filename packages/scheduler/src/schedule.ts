@@ -237,8 +237,21 @@ export function schedule(input: ScheduleInput): ScheduleResult {
     for (const ef of efCandidates) esCandidates.push(subtractWorking(ef, t.durationMinutes, cal));
 
     let es = Math.max(...esCandidates);
-    if (t.actualStart !== undefined) es = t.actualStart; // 鎖定
-    const ef = t.actualFinish !== undefined ? t.actualFinish : addWorking(es, t.durationMinutes, cal);
+    if (t.actualStart !== undefined) es = t.actualStart; // 開始鎖定於實績
+    let ef: Minute;
+    if (t.actualFinish !== undefined) {
+      // 已完成：完成鎖定於實績
+      ef = t.actualFinish;
+    } else if (t.actualStart !== undefined) {
+      // 進行中：開始固定於實績，剩餘片段自 max(statusDate, actualStart) 前推
+      const remaining = t.remainingMinutes ?? t.durationMinutes;
+      const base =
+        input.statusDate !== undefined ? Math.max(input.statusDate, es) : es;
+      ef = addWorking(base, remaining, cal);
+    } else {
+      // 未開始：以全工期自 ES 前推
+      ef = addWorking(es, t.durationMinutes, cal);
+    }
     ES.set(id, es);
     EF.set(id, ef);
   }

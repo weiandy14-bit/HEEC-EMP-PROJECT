@@ -52,7 +52,7 @@
 - **預期結果**：`cycle_no` 1→2；`U(review,cycle,step_code)` 不衝突；前輪列不變；`review_events` 逐步 append。
 - **完成定義**：多輪測試通過，且第一輪資料在第二輪後仍讀回原值。
 
-### P3-03 核可需文號＋日期
+### P3-03 核可需文號＋日期　（狀態：✅ 已實作，5 整合測試通過並納入 CI）
 - **功能**：狀態轉 approved 需 approval_number + approval_date，缺一不可。
 - **資料表·API**：`project_statutory_reviews`；`PATCH /projects/{p}/reviews/{r}`（Lead/QA 核准）。
 - **測試輸入**：(a) approved 缺文號或日期；(b) 齊備。

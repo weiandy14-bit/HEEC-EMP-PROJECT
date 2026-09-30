@@ -16,6 +16,9 @@ export class CreateReviewDto {
   @IsOptional() @IsString() notes?: string;
 }
 
+export const REVIEW_STATUS = ['pending', 'in_review', 'revision', 'approved', 'rejected', 'na'] as const;
+export type ReviewStatus = (typeof REVIEW_STATUS)[number];
+
 export class UpdateReviewDto {
   @IsOptional() @IsIn(APPLICABILITY) applicability?: Applicability;
   @IsOptional() @IsString() na_reason?: string;
@@ -25,6 +28,9 @@ export class UpdateReviewDto {
   @IsOptional() @IsString() responsible_org?: string;
   @IsOptional() @IsDateString() legal_due_date?: string;
   @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsIn(REVIEW_STATUS) status?: ReviewStatus;
+  @IsOptional() @IsString() approval_number?: string;
+  @IsOptional() @IsDateString() approval_date?: string;
 }
 
 export const STEP_STATUS = ['pending', 'in_progress', 'submitted', 'passed', 'revision', 'failed'] as const;

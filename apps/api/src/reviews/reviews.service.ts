@@ -153,7 +153,20 @@ export class ReviewsService {
       confirmation_due_date: dto.confirmation_due_date ?? existing.confirmation_due_date,
     };
     this.validateApplicability(next);
-    const status = next.applicability === 'not_applicable' ? 'na' : existing.status;
+
+    // 狀態轉換：N/A 強制 na；否則採 dto.status 或維持現值
+    const status =
+      next.applicability === 'not_applicable' ? 'na' : (dto.status ?? existing.status);
+
+    // P3-03 核可需文號＋日期：轉 approved 時必填 approval_number + approval_date
+    const approvalNumber = dto.approval_number ?? (existing.approval_number as string | null);
+    const approvalDate = dto.approval_date ?? (existing.approval_date as string | null);
+    if (status === 'approved' && (!approvalNumber || !approvalDate)) {
+      throw DomainError.validation('核可需文號與日期', {
+        approval_number: ['required when approved'],
+        approval_date: ['required when approved'],
+      });
+    }
 
     return this.db.transaction(async (client) => {
       const res = await client.query<ReviewRow>(
@@ -162,26 +175,42 @@ export class ReviewsService {
                 confirmation_due_date = $7, authority = COALESCE($8, authority),
                 responsible_org = COALESCE($9, responsible_org),
                 legal_due_date = COALESCE($10, legal_due_date),
-                notes = COALESCE($11, notes), status = $12, updated_by = $13
+                notes = COALESCE($11, notes), status = $12,
+                approval_number = $14, approval_date = $15, updated_by = $13
           WHERE org_id = $1 AND project_id = $2 AND id = $3
           RETURNING *`,
         [
           ctx.orgId, projectId, reviewId, next.applicability, next.na_reason,
           next.confirmation_owner_id, next.confirmation_due_date, dto.authority ?? null,
           dto.responsible_org ?? null, dto.legal_due_date ?? null, dto.notes ?? null, status, ctx.userId,
+          status === 'approved' ? approvalNumber : (dto.approval_number ?? existing.approval_number ?? null),
+          status === 'approved' ? approvalDate : (dto.approval_date ?? existing.approval_date ?? null),
         ],
       );
       const row = res.rows[0];
-      await client.query(
-        `INSERT INTO review_events (org_id, review_id, event_type, actor_id, payload)
-         VALUES ($1,$2,'applicability_changed',$3,$4)`,
-        [ctx.orgId, reviewId, ctx.userId, JSON.stringify({ from: existing.applicability, to: next.applicability })],
-      );
+      if (dto.applicability && dto.applicability !== existing.applicability) {
+        await client.query(
+          `INSERT INTO review_events (org_id, review_id, event_type, actor_id, payload)
+           VALUES ($1,$2,'applicability_changed',$3,$4)`,
+          [ctx.orgId, reviewId, ctx.userId, JSON.stringify({ from: existing.applicability, to: next.applicability })],
+        );
+      }
+      if (status !== existing.status) {
+        await client.query(
+          `INSERT INTO review_events (org_id, review_id, event_type, actor_id, payload)
+           VALUES ($1,$2,$3,$4,$5)`,
+          [ctx.orgId, reviewId, status === 'approved' ? 'approved' : 'status_changed', ctx.userId,
+           JSON.stringify({ from: existing.status, to: status, approval_number: approvalNumber })],
+        );
+      }
       await this.audit.write(client, ctx, {
         entityType: 'statutory_review',
         entityId: reviewId,
         action: 'update',
-        diff: { applicability: { from: existing.applicability, to: next.applicability } },
+        diff: {
+          applicability: { from: existing.applicability, to: next.applicability },
+          status: { from: existing.status, to: status },
+        },
       });
       return row;
     });

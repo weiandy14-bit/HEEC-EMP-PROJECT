@@ -25,7 +25,7 @@ export class ReviewsController {
   }
 
   @Patch(':r')
-  @Roles('PM', 'Lead', 'Admin')
+  @Roles('PM', 'Lead', 'QA', 'Admin') // QA/Lead 可核准（§8 審核 A）
   async update(
     @CurrentUser() user: UserContext,
     @Param('p', ParseUUIDPipe) projectId: string,

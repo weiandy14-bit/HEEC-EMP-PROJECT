@@ -3,7 +3,13 @@ import { DatabaseService } from '../database/database.service';
 import { AuditService } from '../audit/audit.service';
 import { DomainError } from '../common/errors';
 import type { UserContext } from '../auth/request-context';
-import type { Applicability, CreateReviewDto, UpdateReviewDto } from './dto';
+import type {
+  Applicability,
+  CreateReviewDto,
+  UpdateReviewDto,
+  CreateReviewStepDto,
+  UpdateReviewStepDto,
+} from './dto';
 
 interface ReviewRow {
   id: string;
@@ -176,6 +182,123 @@ export class ReviewsService {
         entityId: reviewId,
         action: 'update',
         diff: { applicability: { from: existing.applicability, to: next.applicability } },
+      });
+      return row;
+    });
+  }
+
+  // ------------------------------------------------------------------ 審查步驟（P3-02）
+
+  private async assertReview(ctx: UserContext, projectId: string, reviewId: string): Promise<void> {
+    const r = await this.db.queryOne(
+      `SELECT 1 FROM project_statutory_reviews
+        WHERE org_id = $1 AND project_id = $2 AND id = $3 AND archived_at IS NULL`,
+      [ctx.orgId, projectId, reviewId],
+    );
+    if (!r) throw DomainError.notFound('審查');
+  }
+
+  async listSteps(ctx: UserContext, projectId: string, reviewId: string) {
+    await this.assertProject(ctx, projectId);
+    await this.assertReview(ctx, projectId, reviewId);
+    return this.db.query(
+      `SELECT id, review_id, template_step_id, step_code, cycle_no, status,
+              planned_at, actual_at, due_at, owner_id, notes, version
+         FROM project_statutory_review_steps
+        WHERE org_id = $1 AND review_id = $2 AND archived_at IS NULL
+        ORDER BY step_code, cycle_no`,
+      [ctx.orgId, reviewId],
+    );
+  }
+
+  /** 建立審查步驟；cycle_no 省略時自動取該 step_code 之次一循環（送審→補正→再送審）。 */
+  async createStep(ctx: UserContext, projectId: string, reviewId: string, dto: CreateReviewStepDto) {
+    await this.assertProject(ctx, projectId);
+    await this.assertReview(ctx, projectId, reviewId);
+    const status = dto.status ?? 'submitted';
+
+    return this.db.transaction(async (client) => {
+      let cycleNo = dto.cycle_no;
+      if (cycleNo === undefined) {
+        const m = await client.query<{ next: number }>(
+          `SELECT COALESCE(MAX(cycle_no),0)+1 AS next
+             FROM project_statutory_review_steps WHERE review_id = $1 AND step_code = $2`,
+          [reviewId, dto.step_code],
+        );
+        cycleNo = Number(m.rows[0].next);
+      }
+      let row: any;
+      try {
+        const res = await client.query(
+          `INSERT INTO project_statutory_review_steps
+             (org_id, review_id, template_step_id, step_code, cycle_no, status,
+              planned_at, actual_at, due_at, owner_id, notes, created_by, updated_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)
+           RETURNING *`,
+          [
+            ctx.orgId, reviewId, dto.template_step_id ?? null, dto.step_code, cycleNo, status,
+            dto.planned_at ?? null, dto.actual_at ?? null, dto.due_at ?? null,
+            dto.owner_id ?? null, dto.notes ?? null, ctx.userId,
+          ],
+        );
+        row = res.rows[0];
+      } catch (e: any) {
+        if (e?.code === '23505') {
+          throw DomainError.conflict('duplicate_step', `步驟已存在：${dto.step_code} cycle ${cycleNo}`);
+        }
+        throw e;
+      }
+      await client.query(
+        `INSERT INTO review_events (org_id, review_id, step_id, event_type, actor_id, payload)
+         VALUES ($1,$2,$3,'step_created',$4,$5)`,
+        [ctx.orgId, reviewId, row.id, ctx.userId, JSON.stringify({ step_code: dto.step_code, cycle_no: cycleNo, status })],
+      );
+      await this.audit.write(client, ctx, {
+        entityType: 'review_step',
+        entityId: row.id,
+        action: 'create',
+        diff: { review_id: reviewId, step_code: dto.step_code, cycle_no: cycleNo, status },
+      });
+      return row;
+    });
+  }
+
+  async updateStep(
+    ctx: UserContext,
+    projectId: string,
+    reviewId: string,
+    stepId: string,
+    dto: UpdateReviewStepDto,
+  ) {
+    await this.assertProject(ctx, projectId);
+    await this.assertReview(ctx, projectId, reviewId);
+    const existing = await this.db.queryOne<{ id: string; status: string }>(
+      `SELECT id, status FROM project_statutory_review_steps
+        WHERE org_id = $1 AND review_id = $2 AND id = $3 AND archived_at IS NULL`,
+      [ctx.orgId, reviewId, stepId],
+    );
+    if (!existing) throw DomainError.notFound('審查步驟');
+
+    return this.db.transaction(async (client) => {
+      const res = await client.query(
+        `UPDATE project_statutory_review_steps
+            SET status = COALESCE($4, status), actual_at = COALESCE($5, actual_at),
+                owner_id = COALESCE($6, owner_id), notes = COALESCE($7, notes), updated_by = $8
+          WHERE org_id = $1 AND review_id = $2 AND id = $3
+          RETURNING *`,
+        [ctx.orgId, reviewId, stepId, dto.status ?? null, dto.actual_at ?? null, dto.owner_id ?? null, dto.notes ?? null, ctx.userId],
+      );
+      const row = res.rows[0];
+      await client.query(
+        `INSERT INTO review_events (org_id, review_id, step_id, event_type, actor_id, payload)
+         VALUES ($1,$2,$3,'step_status_changed',$4,$5)`,
+        [ctx.orgId, reviewId, stepId, ctx.userId, JSON.stringify({ from: existing.status, to: dto.status ?? existing.status })],
+      );
+      await this.audit.write(client, ctx, {
+        entityType: 'review_step',
+        entityId: stepId,
+        action: 'update',
+        diff: { status: { from: existing.status, to: dto.status ?? existing.status } },
       });
       return row;
     });

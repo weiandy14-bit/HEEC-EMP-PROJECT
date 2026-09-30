@@ -45,7 +45,7 @@
 - **預期結果**：(a)(b) → 422 validation（服務層擋、DB CHECK 兜底）；(c) → 201，`review_events` + `audit_logs` 各一。
 - **完成定義**：1 正 2 負測試通過，稽核可查。
 
-### P3-02 送審／補正多輪循環
+### P3-02 送審／補正多輪循環　（狀態：✅ 已實作，3 整合測試通過並納入 CI）
 - **功能**：以 `cycle_no` 進行 送審→補正→再送審，各輪歷史不被覆寫。
 - **資料表·API**：`project_statutory_review_steps`、`review_events`；`POST /projects/{p}/reviews/{r}/steps`、`PATCH …/steps/{id}`。
 - **測試輸入**：submit(cycle1) → revision → submit(cycle2)。

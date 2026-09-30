@@ -26,3 +26,25 @@ export class UpdateReviewDto {
   @IsOptional() @IsDateString() legal_due_date?: string;
   @IsOptional() @IsString() notes?: string;
 }
+
+export const STEP_STATUS = ['pending', 'in_progress', 'submitted', 'passed', 'revision', 'failed'] as const;
+export type StepStatus = (typeof STEP_STATUS)[number];
+
+export class CreateReviewStepDto {
+  @IsString() step_code!: string;
+  @IsOptional() @IsInt() @Min(1) cycle_no?: number; // 省略時自動取該 step_code 之次一循環
+  @IsOptional() @IsIn(STEP_STATUS) status?: StepStatus;
+  @IsOptional() @IsUUID() template_step_id?: string;
+  @IsOptional() @IsUUID() owner_id?: string;
+  @IsOptional() @IsDateString() planned_at?: string;
+  @IsOptional() @IsDateString() actual_at?: string;
+  @IsOptional() @IsDateString() due_at?: string;
+  @IsOptional() @IsString() notes?: string;
+}
+
+export class UpdateReviewStepDto {
+  @IsOptional() @IsIn(STEP_STATUS) status?: StepStatus;
+  @IsOptional() @IsDateString() actual_at?: string;
+  @IsOptional() @IsUUID() owner_id?: string;
+  @IsOptional() @IsString() notes?: string;
+}

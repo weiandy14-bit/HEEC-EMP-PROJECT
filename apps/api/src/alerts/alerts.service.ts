@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service';
 import { AuditService } from '../audit/audit.service';
 import { DomainError } from '../common/errors';
@@ -35,6 +36,48 @@ export class AlertsService {
     if (lateWorkingDays >= 4) return 'behind';
     if (lateWorkingDays >= 1) return 'attention';
     return 'normal';
+  }
+
+  /**
+   * 專案健康度 = 最高「未關閉」警示級（P3-08）；無未關閉警示則為 normal。
+   * alert_severity 與 project_health 標籤一致，經 text 轉型；於評估／關閉同交易重算。
+   */
+  private async recomputeHealth(
+    client: PoolClient, orgId: string, projectId: string,
+  ): Promise<string> {
+    const res = await client.query<{ health: string }>(
+      `UPDATE projects
+          SET health = COALESCE(
+                (SELECT severity::text::project_health
+                   FROM alerts
+                  WHERE org_id = $1 AND project_id = $2 AND state <> 'closed'
+                  ORDER BY severity DESC
+                  LIMIT 1),
+                'normal'::project_health)
+        WHERE org_id = $1 AND id = $2
+        RETURNING health`,
+      [orgId, projectId],
+    );
+    return res.rows[0]?.health ?? 'normal';
+  }
+
+  /**
+   * 交易性事件寫入（P3-08）：與業務變更同一交易提交，worker 以 event_id 冪等消費。
+   * aggregate_version 供 worker 串行；同 event_id 重投不重複套用。
+   */
+  private async enqueueEvent(
+    client: PoolClient, orgId: string,
+    aggregateType: string, aggregateId: string, type: string,
+    payload: Record<string, unknown>, version = 1,
+  ): Promise<string> {
+    const res = await client.query<{ event_id: string }>(
+      `INSERT INTO job_outbox
+         (org_id, aggregate_type, aggregate_id, aggregate_version, type, payload)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING event_id`,
+      [orgId, aggregateType, aggregateId, version, type, JSON.stringify(payload)],
+    );
+    return res.rows[0].event_id;
   }
 
   async list(ctx: UserContext, projectId: string) {
@@ -106,7 +149,14 @@ export class AlertsService {
         entityType: 'alert', entityId: row.id, action,
         diff: { severity, fingerprint, occurrence_count: row.occurrence_count },
       });
-      return row;
+      // 同交易：重算健康度 + 寫入 outbox 事件（業務變更與事件不可分割）
+      const health = await this.recomputeHealth(client, ctx.orgId, projectId);
+      const eventId = await this.enqueueEvent(
+        client, ctx.orgId, 'alert', row.id, 'alert.raised',
+        { project_id: projectId, severity, fingerprint, occurrence_count: row.occurrence_count },
+        Number(row.occurrence_count) || 1,
+      );
+      return { ...row, project_health: health, event_id: eventId };
     });
   }
 
@@ -133,7 +183,9 @@ export class AlertsService {
         entityType: 'alert', entityId: alertId, action,
         diff: { from: existing.state, to: state, reason: fields.reason ?? null, snooze_until: fields.snooze_until ?? null },
       });
-      return res.rows[0];
+      // 關閉可能降低專案健康度 → 同交易重算
+      const health = await this.recomputeHealth(client, ctx.orgId, projectId);
+      return { ...res.rows[0], project_health: health };
     });
   }
 

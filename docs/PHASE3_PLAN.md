@@ -87,7 +87,7 @@
 - **預期結果**：(a) attention；(b) behind；(c) overdue；(d) overdue（優先）；(e) occurrence=2 且不新增列；(f)(g) → 422；(h) 狀態轉換與理由/期限入歷史、可查。
 - **完成定義**：分級四情境 + 去重 + ack/snooze/close 理由·期限·歷史測試通過；條件解除→closed 保留。
 
-### P3-08 專案健康度與事件串接（含交易/冪等追加條件）
+### P3-08 專案健康度與事件串接（含交易/冪等追加條件）　（狀態：✅ 已實作，8 整合測試通過並納入 CI）
 - **功能**：project.health = 最高未關閉警示級；**事件寫入與業務變更同一交易**；worker 依 aggregate version 串行、**以事件 ID／aggregate version 防重複作用**、失敗退避、dead-letter。
 - **資料表·API**：`projects.health`、`job_outbox`（event_id, aggregate_version, state, attempts）；worker（背景）。
 - **測試輸入**：(a) 觸發 behind 後讀 health；(b) 業務寫入與 outbox 於同交易，模擬提交失敗 → 兩者皆回滾；(c) 同 event_id 重投；(d) 首次消費拋錯後重試。

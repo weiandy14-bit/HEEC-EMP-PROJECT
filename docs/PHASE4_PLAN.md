@@ -5,35 +5,38 @@
 「重現 → 保存錯誤 → 定位根因 → 最小修復 → 重跑失敗項 → 重跑全部門檻」循環處理,
 不得以跳過測試、放寬斷言、刪除案例或停用 CI 通過。
 
-> **業主 2026-09-30 決策**
-> - **主交付 = 三頁 Dashboard UI(頁 A / 頁 B / 頁 C)**,含前端呈現;
->   既有**健康度、單案排程、審查 API** 保留作為三頁的**明細資料來源**(不作為主交付)。
-> - 交付範圍:目前仍為**計畫文件**;實作範圍待確認,尚未開始 P4-A1。
-> - 讀模型:**預設以資料庫即時查詢產生**,確保重新查詢取得**已提交的最新資料**
->   (read-your-writes,無跨請求快取遮蔽)。
-> - **實作形式**:可用**一般 SQL View 或參數化查詢**,由**實測結果**擇優;
->   本階段**不使用 Materialized View,亦不使用跨請求結果快取**。
-> - **效能升級路徑**:若達不到核定回應時間,**先**優化**索引 → 查詢 → 分頁 → 資料範圍**;
->   仍不足**再提出具「更新時限」的快取方案供核定**,不得逕自導入物化或快取。
+> **業主決策(累積)**
+> - **主交付 = 三頁 Dashboard UI(頁 A / 頁 B / 頁 C)**,含前端呈現。
+> - **三頁主題(2026-10-01 更正,為準)**:
+>   - **頁 A 專案總控甘特圖**:所有進行中案件於同一時間軸,可展開 WBS、切換日/週/月、
+>     檢視 Baseline、實績、關鍵路徑與掛件(法定)里程碑。
+>   - **頁 B 本週重要事項**:跨案件週一至週五事項,可切換前/本/下週,含交圖、送審、補正、
+>     會議、責任人與來源。
+>   - **頁 C 工程師未來四週負荷**:工程師 × 週之需求工時、可用工時與負荷率;處理跨案、跨週、
+>     部分投入、個人假期、Max Units、零容量,並能展開來源。
+>   - 健康度卡、單案排程、審查矩陣**僅保留為摘要或 drill-down,不得替代頁 B、頁 C**。
+> - 讀模型:**預設以資料庫即時查詢產生**(read-your-writes);以**一般 SQL View 或參數化查詢**
+>   實作,由實測擇優;**不使用 Materialized View 或跨請求結果快取**。
+> - 效能:達不到核定回應時間時,先優化**索引 → 查詢 → 分頁 → 資料範圍**,再提具「更新時限」之
+>   快取方案供核定。
+> - 交付範圍:目前仍為**計畫文件**;實作範圍待確認,**尚未開始 P4-A1**。
 
 ---
 
 ## 0. 設計原則(貫穿 Phase 4)
 
-- **主交付為三頁 UI**:頁 A/B/C 為前端可操作頁面;後端提供聚合端點 + 沿用既有明細 API。
+- **主交付為三頁 UI**:頁 A/B/C 為前端可操作頁面;後端提供聚合端點 + 沿用既有明細 API 作 drill-down。
 - **讀寫分離**:僅新增讀模型 / 聚合端點;不改動 Phase 1–3 既有寫入語義。
-- **即時查詢(不物化、不快取)**:讀模型預設以資料庫即時查詢產生(read-your-writes),
-  以一般 SQL View 或參數化查詢實作,由實測擇優;不用 Materialized View 或跨請求快取。
-- **一致語義**:時區 Asia/Taipei、日期半開區間 [start, finish)、健康度與警示分級沿用 P3-07/P3-08、
-  週界相交沿用 P3-06。
-- **RBAC + 跨案 IDOR**:聚合端點經 org/project scope;跨案彙總僅回可視專案,
-  單案跨案存取回 404(不洩存在性),沿用 P3-09。
+- **即時查詢(不物化、不快取)**:讀模型以一般 SQL View 或參數化查詢實作,由實測擇優。
+- **一致語義**:時區 Asia/Taipei、日期半開區間 [start, finish)、週界沿用 P3-06、
+  工作時間/容量沿用 §7 日曆引擎(`calendar_working_days` + `calendar_exceptions`)。
+- **RBAC + 跨案 IDOR**:聚合端點經 org/project/resource scope;跨案彙總僅回可視範圍;
+  單案/單資源跨界存取回 404(不洩存在性),沿用 P3-09;成本欄位(cost_rate)受權限控管。
 - **六種前端狀態為一等公民**(每頁皆須實作並驗收):
   `載入 loading / 空 empty / 錯誤 error / 無權限 no-permission / 部分資料 partial / 大資料量 large-volume`。
-- **16:9 桌面呈現**:版面以 16:9 桌面(如 1280×720、1920×1080)為主要目標,格線式佈局、
-  該視窗比例下無水平捲動、資訊密度可讀。
-- **效能升級路徑**:達不到核定回應時間時,先優化索引→查詢→分頁→資料範圍,再提具更新時限之快取方案供核定。
-- **前端技術**:框架於開工前確認(建議 React);圖表(甘特、KPI、看板)套用 dataviz 規範。
+- **16:9 呈現(更正)**:**頁面主框架適配 16:9**;**甘特時間軸可水平捲動,案件/工程師名稱等左側欄固定可見**
+  (凍結欄),使多案、長日期區間仍可讀。非甘特區塊於 16:9 主框架內不做非必要水平捲動。
+- **前端技術**:框架於開工前確認(建議 React);圖表(甘特、矩陣、負荷熱區)套用 dataviz 規範。
 
 完成標準:見 §6。每項含正例 + 負例(權限/邊界)+ 真實結果。
 
@@ -41,125 +44,141 @@
 
 ## 1. 三頁總覽(主交付)
 
-| 頁 | 名稱 | 核心問題 | 明細 API 來源(保留) |
+| 頁 | 名稱 | 必須交付的主功能 | 摘要/drill-down(不可替代主功能) |
 |---|---|---|---|
-| **頁 A** | 專案總覽 Portfolio Health | 「哪些案在燒?」跨案健康度與警示 | **健康度 API**(`projects.health`、`alerts`、`deliverables`) |
-| **頁 B** | 進度與關鍵路徑 Schedule / CPM | 「這案卡在哪?」關鍵路徑、浮時、Baseline 落後 | **單案排程 API**(`schedule_runs`、`project_tasks`、`task_dependencies`、`baselines`) |
-| **頁 C** | 審查・交付・週工作 Compliance & Delivery | 「合規與交付到位?」 | **審查 API**(`project_statutory_reviews`、`deliverables`、`weekly_items`、`meetings`) |
+| **頁 A** | 專案總控甘特圖 | 所有進行中案件同一時間軸;WBS 展開;日/週/月切換;Baseline/實績/關鍵路徑/掛件里程碑 | 單案排程 API 作單案 drill-down;健康度作案件狀態標記 |
+| **頁 B** | 本週重要事項 | 跨案件週一至週五事項;前/本/下週切換;交圖/送審/補正/會議 + 責任人 + 來源 | 審查矩陣、交付明細作來源 drill-down |
+| **頁 C** | 工程師未來四週負荷 | 工程師 × 週之需求/可用工時與負荷率;跨案/跨週/部分投入/個人假期/Max Units/零容量;展開來源 | 單案排程/指派明細作來源 drill-down |
 
 ---
 
-## 2. 頁 A 專案總覽(Portfolio Health)
+## 2. 頁 A 專案總控甘特圖(Multi-project Master Gantt)
 
 **前端元件**
-- KPI 列:專案總數、健康度分布(normal/attention/behind/overdue)、開啟中警示數、逾期交付數。
-- 專案表/卡:每案 health、最高未關閉警示、下一法定期限、計畫 vs 實際進度 %、關鍵路徑落後天數。
-- 警示彙總(依 severity 分組);篩選(專業/health/負責人)、排序(health desc / 落後天數 desc)。
+- 多案甘特:左側**凍結欄**(案件 → WBS 樹,可展開/收合);右側時間軸 bar,**可水平捲動**。
+- 每任務三態 bar:planned / baseline / actual(逾期以色標);關鍵路徑高亮。
+- **掛件(法定)里程碑**標記於時間軸(來自 statutory reviews 期限)。
+- 縮放切換 **日 / 週 / 月**;時間範圍選取;篩選(專業、案件狀態=進行中)。
+- 摘要:每案健康度標記(drill-down 進單案排程)。
 
 **API**
-- 聚合:`GET /dashboard/portfolio` → `{ kpis, projects[] }`;`GET /dashboard/portfolio/alerts?severity=`
-- 明細來源(保留):既有健康度/警示查詢;參數 `?discipline= &health= &sort= &limit= &cursor=`
+- 聚合:`GET /dashboard/gantt?zoom=day|week|month&from=&to=&status=in_progress&discipline=&cursor=`
+  → `{ projects[]{ id, name, health, tasks[]{ id, parent_id, wbs_path, name, critical,
+       planned{start,finish}, baseline{start,finish}, actual{start,finish} }, milestones[] } }`
+- Drill-down(保留):`GET /projects/{p}/dashboard/schedule`(單案排程,含浮時/overCritical/相依)、
+  `…/schedule/tasks/{t}`。
 
-**資料來源**:`projects.health`、`alerts(state<>'closed')`、`deliverables(status/due_at)`、
-`schedule_runs / project_tasks`、`baselines`;即時 view `v_project_dashboard`(每案一列,LATERAL 聚合),
-沿用索引 `ix_alerts_project_sev_state`。
+**資料來源**:`projects(status 進行中)`、`project_tasks(parent_id 階層、planned/actual)`、
+`baselines/baseline_tasks`、`task_dependencies`(關鍵路徑,取自 scheduler 輸出/schedule_runs)、
+`project_statutory_reviews`(掛件里程碑);即時 view `v_gantt_task`(每任務一列,LATERAL 併 baseline/actual)。
 
-**互動狀態**:六種共通狀態(§5)+ filter・sort 即時 + drill-down 點卡進頁 B/C。
+**互動狀態**:六種共通狀態(§5)+ WBS 展開/收合 + 日/週/月縮放 + 時間軸水平捲動(名稱欄凍結)
++ drill-down 單案 + stale(任務變更晚於最新 schedule_run → 標示需重排)。
 
-**權限**:登入且屬該 org 之任一角色可讀;僅回**使用者可視專案**;他 org/無 scope 專案不出現(不洩)。
+**權限**:登入該 org 具案件 scope 之角色可讀;僅顯示**可視進行中案件**;他 org/無 scope 案件不出現;
+跨案 task drill-down → 404。
 
 **驗收案例(正/負)**
 
 | 編號 | 類型 | 測試輸入 | 預期結果 |
 |---|---|---|---|
-| P4-A1 | 正 | seed N 案不同 health/警示 | KPI 分布與計數正確 |
-| P4-A2 | 正 | 對某案 evaluate behind | 該案 health=behind(與 P3-08 一致) |
-| P4-A3 | 正 | `?health=overdue&sort=late_days desc` | 只回逾期案、序正確 |
-| P4-A4 | 負(權限/IDOR) | 他 org 專案、無 scope 使用者 | 不出現於彙總;無可視專案 → empty(非錯誤) |
-| P4-A5 | 負(效能,補 G8) | ≥50 案彙總單次請求 | 無 N+1、`EXPLAIN` index scan、回應 < 門檻 |
+| P4-A1 | 正 | 多個進行中案件、各有 WBS 父子任務 | 同一時間軸列出各案;WBS 樹可展開;每任務含 planned/baseline/actual bar |
+| P4-A2 | 正 | `zoom=day/week/month`、含法定審查期限 | 時間刻度依縮放正確;掛件里程碑顯示於對應日期 |
+| P4-A3 | 正 | 有關鍵路徑與落後實績之案 | 關鍵路徑高亮與 scheduler critical 一致;Baseline vs 實績對比正確 |
+| P4-A4 | 負(權限/IDOR) | 他 org/無 scope 案件、跨案 task drill-down | 不出現於甘特;跨案 drill-down → 404 |
+| P4-A5 | 負(效能,補 G8) | ≥50 案 × 多任務單次請求 | 分頁/範圍限制、無 N+1、`EXPLAIN` index scan、回應 < 門檻 |
 
 ---
 
-## 3. 頁 B 進度與關鍵路徑(Schedule / CPM)
+## 3. 頁 B 本週重要事項(Cross-project Weekly Priorities)
 
 **前端元件**
-- 甘特(planned vs baseline vs actual)、關鍵路徑高亮、浮時(total/free)、逾期與 **overCritical** 標記。
-- 里程碑/法定錨點;schedule_run 資訊(engineVersion、inputHash、status)。
-- 篩選(專業 / 僅關鍵路徑 / 僅逾期);drill:任務 → 明細與前後相依。
+- 週一至週五欄(跨所有可視案件),每格列事項卡:**類型(交圖/送審/補正/會議)**、標題、
+  **所屬案件**、**責任人**、**來源**(可 drill-down 至原始交付/審查步驟/會議)。
+- **前/本/下週**切換(Asia/Taipei 週界);逾期未完成置頂並持續顯示;完成回寫。
+- 篩選(類型、案件、責任人)。
 
 **API**
-- 聚合:`GET /projects/{p}/dashboard/schedule` →
-  `{ run, tasks[](es/ef/ls/lf, totalFloat, freeFloat, critical, overCritical, planned/actual/baseline),
-     criticalPath[], milestones[] }`
-- 明細來源(保留):既有**單案排程 API**;`GET /projects/{p}/dashboard/schedule/tasks/{t}`;
-  `?run_id=` 回放歷史 run(唯讀),預設取最新 published run。
+- 聚合:`GET /dashboard/weekly?week=prev|this|next|<YYYY-Www>&type=&assignee=`
+  → `{ weekStart, weekEnd, items[]{ id, type(交圖|送審|補正|會議), title, project_id, project_name,
+       assignee_id, assignee_name, source{kind,id}, due_at, status, overdue } }`
+- Drill-down(保留):`GET …/reviews/{r}/steps`(送審/補正)、`…/deliverables`(交圖)、`…/meetings`(會議)。
 
-**資料來源**:`schedule_runs`、`project_tasks`、`task_dependencies`、`baselines/baseline_tasks`、
-`calendars`;scheduler 純函式輸出(input/result hash 一致)。
+**資料來源**:`weekly_items`(跨案彙整;type、source_key、period_start/end、due_at、status、owner)、
+並由 `deliverables`(交圖 due)、`project_statutory_review_steps`(送審/補正 planned/due)、
+`meetings`(會議 starts_at)衍生;週界與跨週相交沿用 P3-06。
 
-**互動狀態**:六種共通狀態(§5)+ filter + drill-down + **stale**(project_tasks 更新晚於最新
-schedule_run → 標示需重排)+ 歷史 run 唯讀。
+**互動狀態**:六種共通狀態(§5)+ 前/本/下週切換 + filter + drill-down 來源 + 逾期置頂視覺。
 
-**權限**:具該案 scope 之角色可讀;跨案(A 案 URL 取 B 案 run/task)→ 404(不洩)。
+**權限**:具案件 scope 者可讀,僅回**可視案件**之事項;Viewer 唯讀;無 scope 案件事項不出現。
 
 **驗收案例(正/負)**
 
 | 編號 | 類型 | 測試輸入 | 預期結果 |
 |---|---|---|---|
-| P4-B1 | 正 | 對齊 scheduler 單元 T0x | critical 集合、totalFloat=0 一致 |
-| P4-B2 | 正 | 落後任務 | lateDays 與 G9 修正一致(起日不多算) |
-| P4-B3 | 正 | 鎖定實績超期 | overCritical=true、負浮時仍回傳(與 G5) |
-| P4-B4 | 負(狀態) | 未發布 → 發布後改任務 | 未發布 empty;改任務後標 stale |
-| P4-B5 | 負(IDOR) | A 案 URL 取 B 案 run/task | 404 |
+| P4-B1 | 正 | 多案於本週各有 交圖/送審/補正/會議 | 週一至五彙整跨案事項,每項含類型、案件、責任人、來源 |
+| P4-B2 | 正 | `week=prev/this/next` | 週界(Asia/Taipei 週一–週五)正確;事項落於對應週 |
+| P4-B3 | 正 | 逾期未完成項 + 完成回寫 | 逾期持續顯示且置頂;標記完成後狀態更新、次週不再逾期顯示 |
+| P4-B4 | 負(權限) | Viewer 讀取、無 scope 案件事項 | Viewer 讀 200;無 scope 案件事項不出現 |
+| P4-B5 | 負(邊界) | 期間橫跨兩週之項、同來源觸發兩次 | 相交各週皆現;同 `source_key` 去重僅一列(不以 source_key 決定週別) |
 
 ---
 
-## 4. 頁 C 審查・交付・週工作(Compliance & Delivery)
+## 4. 頁 C 工程師未來四週負荷(Engineer 4-Week Workload)
 
 **前端元件**
-- 法定審查矩陣(逐專業 applicable/N-A/pending + cycle 進度 + 下一期限;N/A 顯示理由)。
-- 交付物看板(draft→submitted→accepted/rejected→locked;版本;逾期;locked 唯讀)。
-- 週工作清單(`?week=`;跨週相交、逾期置頂、完成回寫);會議列(近期/未結)。
+- 矩陣:**工程師(列)× 未來四週(欄)**,每格顯示 **需求工時 / 可用工時 / 負荷率**,
+  以熱區色標(未滿載/滿載/超載);超載與零容量另加標記。
+- 展開來源:點格列出貢獻**來源**(案件、任務、指派工時、`assignment_units`、booking_type)。
+- 篩選(團隊、工程師、案件);切換起始週。
 
 **API**
-- 聚合:`GET /projects/{p}/dashboard/compliance` → `{ reviews[], reviewSummary, deliverables[], deliverableSummary }`;
-  `GET /projects/{p}/dashboard/weekly?week=`
-- 明細來源(保留):既有**審查 API**、交付物、週工作、會議明細(`GET …/reviews/{r}/steps`、`…/deliverables`)。
+- 聚合:`GET /dashboard/workload?from_week=<YYYY-Www>&weeks=4&team_id=&resource_id=`
+  → `{ weeks[], resources[]{ resource_id, name, max_units, cells[]{ week, demand_minutes,
+       capacity_minutes, load_rate, flags[over_allocated|zero_capacity|on_leave],
+       sources[]{ project_id, task_id, minutes, assignment_units, booking_type } } } }`
+- 說明:`load_rate = demand_minutes / capacity_minutes`;`capacity_minutes = 0` 時不除以零,
+  回 `load_rate=null` 並置 `zero_capacity`(若 `demand>0` 另置 `over_allocated`)。
 
-**資料來源**:`project_statutory_reviews / steps / review_events`、`deliverables`、`weekly_items`、
-`meetings`;週界沿用 P3-06 Asia/Taipei 相交邏輯。
+**資料來源**(即時查詢,view `v_resource_week_load` 或參數化查詢):
+- 需求:`resource_assignments`(`planned_work_minutes`/`remaining_work_minutes`、`assignment_start/finish`、
+  `contour` 逐期曲線;無 contour 則按窗內工作時間平均攤配到週)、跨 `project_id` 聚合(跨案)。
+- 可用:`resources.max_units` × 由 `resource_calendars` → `calendars` / `calendar_working_days` /
+  `calendar_exceptions` 逐日求得之工作分鐘(個人假期以 exception `available_minutes=0` 表示);
+  `resources.active_from/to` 界定在職區間。
+- 部分投入:`assignment_units < 1.0`;超額:某週同時 units 合計 > `max_units` → `over_allocated`。
 
-**互動狀態**:六種共通狀態(§5)+ week 切換 + filter(專業・狀態)+ drill-down(審查步驟歷史・交付版本)
-+ 逾期置頂視覺。
+**互動狀態**:六種共通狀態(§5)+ 起始週切換 + filter + drill-down 來源 + 超載/零容量/請假標記。
 
-**權限**:具該案 scope 者可讀;Viewer 唯讀可看、寫入(交付/審查)仍 403(沿用 P3-09);跨案 → 404。
+**權限**:具 org 且資源可視範圍者可讀;僅回可視工程師與可視案件之貢獻;跨 org 工程師不出現(不洩);
+`cost_rate`/成本欄位僅具權限者可見。
 
 **驗收案例(正/負)**
 
 | 編號 | 類型 | 測試輸入 | 預期結果 |
 |---|---|---|---|
-| P4-C1 | 正 | 各適用性(applicable/N-A/pending) | 矩陣適用性/循環/下一期限正確、N/A 顯理由 |
-| P4-C2 | 正 | 各狀態交付 | 看板計數與逾期標示正確;locked 唯讀 |
-| P4-C3 | 正 | 跨週+逾期項,查兩週 | 相交兩週皆現、逾期持續置頂(與 P3-06) |
-| P4-C4 | 負(權限) | Viewer 於看板寫入 | 讀 200、寫 403 |
-| P4-C5 | 負(IDOR) | A 案 URL 取 B 案 compliance/weekly | 404 |
+| P4-C1 | 正(基準) | 一工程師、單案、單週指派 8h;該週日曆可用 40h | 該格 demand=8h、capacity=40h、load_rate=0.2 |
+| P4-C2 | 正(跨案/跨週) | 一工程師跨兩案,指派窗橫跨兩週 | 需求正確分攤至各案各週;展開來源列出各案/任務工時與 units |
+| P4-C3 | 正(部分投入/Max Units) | `assignment_units=0.5`;同週多指派使 units 合計 > `max_units` | 需求依 work 計、負荷率=需求/可用;units 超過 max_units → `over_allocated` |
+| P4-C4 | 邊界(個人假期/零容量) | 個人日曆該週假期(exception=0)使可用降低;另一週 max_units=0 或無工作日 | 可用工時反映假期;零容量週 `capacity=0`、`load_rate=null`、置 `zero_capacity`;需求>0 再置 `over_allocated`(不除以零) |
+| P4-C5 | 負(權限/IDOR) | 跨 org 工程師、無成本權限者 | 跨 org 工程師不出現;`cost_rate` 不外洩;越權查詢 → 404/欄位隱藏 |
 
 ---
 
 ## 5. 共通 UI 狀態與 16:9 呈現(每頁皆須實作並驗收)
 
-三頁(A/B/C)各自須實作並通過下列六種狀態與桌面呈現。驗收於前端(可含元件/E2E 測試)與
+三頁(A/B/C)各自須實作並通過下列六種狀態與桌面呈現。驗收於前端(元件/E2E)與
 對應 API 邊界(整合測試)雙層佐證。
 
 | 編號 | 狀態/呈現 | 觸發條件 | 預期行為(每頁) |
 |---|---|---|---|
 | P4-U1 | 載入 loading | 資料請求進行中 | 顯示骨架/spinner,不阻塞版面,不閃爍空白 |
-| P4-U2 | 空 empty | 查詢成功但無資料(無可視專案/未發布排程/該分頁無項目) | 顯示引導訊息,非錯誤樣式 |
+| P4-U2 | 空 empty | 查詢成功但無資料(無進行中案件/本週無事項/無在職工程師) | 顯示引導訊息,非錯誤樣式 |
 | P4-U3 | 錯誤 error | 5xx / 網路失敗 | 顯示錯誤與重試;不顯示殘缺資料當成功 |
-| P4-U4 | 無權限 no-permission | 無 org/案 scope、角色不足 | 明確「無權限」訊息;不洩資源存在性(對應 403/404) |
-| P4-U5 | 部分資料 partial | 部分子查詢/單案聚合失敗(頁 A) | 失敗區塊佔位標示,其餘正常呈現,不整頁失敗 |
-| P4-U6 | 大資料量 large-volume | 高案量/多任務/多交付 | 分頁或虛擬滾動 + 上限保護;回應在門檻內、版面不崩壞 |
-| P4-U7 | 16:9 桌面呈現 | 於 16:9 桌面(1280×720、1920×1080) | 格線式佈局、該比例無水平捲動、資訊密度可讀 |
+| P4-U4 | 無權限 no-permission | 無 org/案/資源 scope、角色不足 | 明確「無權限」訊息;不洩資源存在性(對應 403/404) |
+| P4-U5 | 部分資料 partial | 部分案件/資源聚合失敗 | 失敗區塊佔位標示,其餘正常呈現,不整頁失敗 |
+| P4-U6 | 大資料量 large-volume | 多案 × 多任務(頁 A)、多工程師(頁 C) | 分頁/虛擬滾動 + 範圍限制;回應在門檻內、版面不崩壞 |
+| P4-U7 | 16:9 呈現 | 於 16:9 桌面(1280×720、1920×1080) | 主框架適配 16:9;**甘特/矩陣時間軸可水平捲動,左側名稱欄凍結可見**;非捲動區不溢出 |
 
 ---
 
@@ -167,14 +186,16 @@ schedule_run → 標示需重排)+ 歷史 run 唯讀。
 
 Phase 4 視為完成,須同時滿足:
 
-1. **三頁 UI(A/B/C)** 皆可操作,前端元件如各頁所列。
-2. 各頁功能正負驗收(P4-A1~A5、P4-B1~B5、P4-C1~C5)通過,含權限與跨案 IDOR 負例。
-3. **六種前端狀態**(P4-U1~U6:載入/空/錯誤/無權限/部分資料/大資料量)於**每一頁**實作並驗收。
-4. **16:9 桌面呈現**(P4-U7)於每頁達標。
+1. **三頁 UI(A/B/C)** 皆可操作,主功能與各頁前端元件相符
+   (頁 A 多案總控甘特、頁 B 跨案本週事項、頁 C 工程師四週負荷)。
+2. 各頁功能正負驗收(P4-A1~A5、P4-B1~B5、**P4-C1~C5 含工程師負荷之跨案/跨週/部分投入/個人假期/
+   Max Units/零容量**)通過,含權限與跨案 IDOR 負例。
+3. **六種前端狀態**(P4-U1~U6)於**每一頁**實作並驗收。
+4. **16:9 呈現**(P4-U7):主框架適配 16:9,甘特/矩陣時間軸可水平捲動且名稱欄凍結。
 5. 讀模型為即時查詢(read-your-writes),不用 Materialized View/跨請求快取;效能達核定門檻
    (P4-A5 補 Phase 2 遺留缺口 G8),否則依效能升級路徑處理。
-6. 後端聚合端點皆 RBAC + org/project scope + 跨案 IDOR 404;新增 `dashboard_*.test.mjs` 整合測試,
-   經 `test:integration` glob 自動納入 CI;migration(`0018+`)經 `db/apply.sh` glob 自動納入。
+6. 後端聚合端點皆 RBAC + org/project/resource scope + 跨案 IDOR 404;新增 `dashboard_*.test.mjs`
+   整合測試,經 `test:integration` glob 自動納入 CI;migration(`0018+`)經 `db/apply.sh` glob 自動納入。
 7. 既有 Phase 1–3 門檻(lint / typecheck / test / build / 全新 migration+seed / DB 規則 / smoke /
    整合測試)持續全綠。
 
@@ -182,5 +203,9 @@ Phase 4 視為完成,須同時滿足:
 
 ## 7. 建議里程碑順序
 
-開工前確認前端框架與讀模型 view 邊界 → **頁 A(總覽,給全局)** → **頁 B(排程深掘)** →
-**頁 C(合規交付)**;各頁完成即補齊六種狀態與 16:9 呈現,不留待最後。
+開工前確認前端框架與讀模型 view 邊界 → **頁 A(多案總控甘特,建立時間軸與 WBS 基礎)** →
+**頁 C(工程師負荷,資源/日曆/指派計算最關鍵)** → **頁 B(跨案本週事項)**;
+各頁完成即補齊六種狀態與 16:9 呈現,不留待最後。
+
+> 順序說明:頁 C 的容量/需求計算風險最高,故列於頁 B 之前優先驗證;若業主偏好先出跨案事項,
+> 可調整為 A → B → C。

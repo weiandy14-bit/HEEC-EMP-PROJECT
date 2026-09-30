@@ -55,16 +55,25 @@
 | Baseline 不可變/late_days | — | ❌ 缺口（DB/服務層職責，非純函式 scheduler） |
 | property-based（拓樸序、界限、往返、hash 一致，§10） | — | ❌ 缺口 |
 
-## 缺口與後續補強計畫（優先序）
+## 缺口與後續補強計畫（依優先級）
 
-1. **限制型別全覆蓋**：SNET/SNLT/FNET/FNLT/MSO/ALAP 各一案例（順向下界、逆向上界、與錨點衝突）。
-2. **負 lag 邊界**：超過 D06 上限（預設 30 工作日）→ `lag_out_of_bounds`；負 lag 造成 start>finish/非法日期 → 拒絕。
-3. **free float 專測**：一前置分歧至多後續，驗證單一任務延後而不推遲任一後續 earliest 的最小 slack。
-4. **超期關鍵**：MFO/固定實績造成負浮時，`critical=true` 且標記超期。
-5. **statusDate 進行中重排**：actualStart 已設、未完成，僅剩餘段依 statusDate 之後重排，前段固定。
-6. **跨日曆相依**：前置與後續採不同日曆/時區，界限以 UTC 事件比較後換算。
-7. **property-based**（§10）：隨機 DAG + 日曆，驗證拓樸序不變、相依界限恆成立、add/subtract 往返一致、相同輸入同 hash。
-8. **多案隔離效能**：多專案不同日曆併行重算，版本隔離與 P95。
-9. **Baseline/late_days（服務層）**：於 API 整合測試層驗證基準不可變與 `late_days` 計算（非 scheduler 純函式範圍）。
+優先級定義：
+- **P0｜Phase 2 核心規則必補**：直接對應 §7 排程演算法正確性，缺少即代表核心規則未被證明；Phase 2 收尾前必須補齊。
+- **P1｜Phase 2 收尾**：健全性與品質門檻（§10 覆蓋率、property-based），Phase 2 完成定義的一部分。
+- **P2｜跨階段/服務層**：屬 DB/服務層或後續階段職責，於相應階段的整合測試層驗證。
 
-上述缺口不影響本輪驗收（CI 門檻、SS 平行測試），列為 Phase 2 收尾與 Phase 3 前的測試補強項目。
+| # | 缺口 | 對應規格 | 優先級 |
+|---|---|---|---|
+| G1 | **限制型別全覆蓋** SNET/SNLT/FNET/FNLT/MSO/ALAP（順向下界、逆向上界、與錨點衝突各一） | §7 關係界限/限制；§7 schedule 偽碼「apply MustFinishOn/…」 | **P0** |
+| G2 | **負 lag 邊界**：超過 D06 上限（預設 30 工作日 =14400 分）→ `lag_out_of_bounds`；負 lag 造成 start>finish/非法日期 → 拒絕 | D06；§7「負 lag 可重疊，但不得違反 start≤finish」 | **P0** |
+| G3 | **free float 專測**：一前置分歧至多後續，驗證單一任務延後而不推遲任一後續 earliest 的最小 slack；並與 total float 區辨 | §7「自由浮時為本任務延後而不推遲任一後續 earliest 的最小 slack」 | **P0** |
+| G4 | **跨日曆相依**：前置與後續採不同日曆/時區，lag 以邊指定日曆換算，界限以 UTC 事件比較後換算 | §7「跨日曆相依比較 UTC 事件後轉換」；`lag` 使用相依邊指定日曆 | **P0** |
+| G5 | **超期關鍵（負浮時標記）**：MFO/固定實績造成負浮時，`critical=true` 且標記超期關鍵 | §7「若已有負浮時需標為超期關鍵」 | P1 |
+| G6 | **statusDate 進行中重排**：actualStart 已設、未完成，僅剩餘段依 statusDate 之後重排，前段固定 | §7「狀態日之前已完成片段固定，剩餘片段重排」 | P1 |
+| G7 | **property-based**（隨機 DAG+日曆：拓樸序不變、相依界限恆成立、add/subtract 往返一致、相同輸入同 hash） | §10「algorithm unit + property-based」；核心覆蓋≥90% | P1 |
+| G8 | **多案隔離效能**：多專案不同日曆併行重算，版本隔離與 P95（T10 延伸） | §7 T10；§1 驗收尺度 | P2 |
+| G9 | **Baseline 不可變 / late_days**：基準快照不可 UPDATE、`late_days=max(0,countWorkingDays(baseline.finish,forecast.finish))` | §7 基準/進度；R05 | P2（服務層） |
+| G10 | **實績鎖定進階**：完成=100 須完成日期、完成日期須 100% 的一致性（scheduler 已鎖定 actual，DB CHECK 已有；需整合測試斷言） | §7 進度規則 | P2（服務層） |
+
+**P0 為本專案下一步（Phase 2 收尾）優先補強對象**：G1 限制型別、G2 負 lag 邊界、G3 free float、G4 跨日曆。
+上述缺口皆不影響本輪已接受之驗收（CI 門檻、SS 平行案例、smoke 正負例）。

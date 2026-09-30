@@ -47,14 +47,14 @@
 | 總浮時 total float | T01、R03、T10 | ✅ |
 | 自由浮時 free float | G3（驅動 0 / 非驅動 >0，與 total 區辨） | ✅ |
 | 關鍵路徑 critical | T01、R03、T10 | ✅ |
-| 超期關鍵（負浮時標記） | — | ❌ 缺口（G5，P1） |
+| 超期關鍵（負浮時標記 overCritical） | G5（實績晚於掛件、落後傳遞至錨點） | ✅ |
 | 冪等 input/result hash | T09 | ✅ |
 | 跨日曆相依（UTC 比較後換算） | G4（台北×UTC 日曆） | ✅ |
 | 工作時間引擎（add/subtract/between/countDays/snap） | calendar.test.ts | ✅ |
 | late_days（§7 逾期工作日） | G9（純函式，正+邊界） | ✅ |
 | Baseline 不可變（快照 UPDATE/DELETE 拒絕） | G9（DB 觸發器，`db/tests`） | ✅ |
 | 實績一致性（完成=100↔完成日期） | G10（DB CHECK，`db/tests`） | ✅ |
-| property-based（拓樸序、界限、往返、hash 一致，§10） | — | ❌ 缺口（G7，P1） |
+| property-based（拓樸序、界限、往返、hash 一致，§10） | G7（隨機 DAG+日曆，80/300/40 次） | ✅ |
 
 ## 缺口與後續補強計畫（依優先級）
 
@@ -69,12 +69,12 @@
 | G2 | 負 lag 邊界：超過 D06 上限 → `lag_out_of_bounds` | D06；§7 | P0 | ✅ 已完成（`phase2.test.ts`） |
 | G3 | free float 專測，與 total float 區辨 | §7 自由浮時 | P0 | ✅ 已完成（`phase2.test.ts`） |
 | G4 | 跨日曆相依：UTC 事件比較後換算 | §7 跨日曆 | P0 | ✅ 已完成（`phase2.test.ts`） |
-| G5 | 超期關鍵（負浮時標記） | §7 | P1 | ❌ 未完成 |
+| G5 | 超期關鍵（負浮時標記，overCritical） | §7 | P1 | ✅ 已完成（`schedule.ts`+`phase2.test.ts`，正例與對照） |
 | G6 | statusDate 進行中剩餘重排 | §7 狀態日 | P1 | ✅ 已完成（`phase2.test.ts`，正+負） |
-| G7 | property-based（隨機 DAG+日曆） | §10 | P1 | ❌ 未完成 |
+| G7 | property-based（隨機 DAG+日曆） | §10 | P1 | ✅ 已完成（`property.test.ts`） |
 | G8 | 多案隔離效能（T10 延伸） | §7 T10；§1 | P2 | ❌ 未完成 |
 | G9 | Baseline 不可變 / late_days | §7 基準/進度；R05 | P2 | ✅ 已完成（late_days 純函式 + DB 觸發器 `db/tests/g9…`） |
 | G10 | 實績一致性（完成=100↔完成日期） | §7 進度規則 | P2 | ✅ 已完成（DB CHECK `db/tests/g10…`） |
 
-**本輪（Phase 2 收尾）已完成**：G1、G2、G3、G4、G6、G9、G10。
-**剩餘缺口**：G5 超期關鍵（P1）、G7 property-based（P1）、G8 多案效能（P2）；不影響已接受之驗收。
+**Phase 2 收尾已完成**：G1、G2、G3、G4、G5、G6、G7、G9、G10（含開工前門檻之 G9 起日修正、G2 重疊斷言、G4 非工作時段、G5 超期關鍵、G7 property-based）。
+**剩餘缺口**：G8 多案效能（P2，Phase 2 效能延伸）；不影響已接受之驗收，可於效能壓測階段補。

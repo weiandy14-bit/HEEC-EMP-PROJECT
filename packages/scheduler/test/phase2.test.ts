@@ -3,11 +3,20 @@ import assert from 'node:assert/strict';
 import {
   schedule,
   workingMinutesBetween,
+  subtractWorking,
   lateDays,
   type ScheduleInput,
   type Calendar,
 } from '../src/index.ts';
 import { standardCalendar, taipei, fromTaipei, DAY, HOUR } from './helpers.ts';
+
+// UTC 日曆（+0，週一至週五 09:00–17:00，無午休），供跨日曆案例使用。
+const CALU: Calendar = {
+  id: 'CALU',
+  tzOffsetMinutes: 0,
+  weekly: [1, 2, 3, 4, 5].map((wd) => ({ weekday: wd, startMinuteOfDay: 9 * 60, endMinuteOfDay: 17 * 60 })),
+};
+const utc = (m: number) => new Date(m * 60000).toISOString().slice(0, 16) + 'Z';
 
 const CAL = standardCalendar();
 
@@ -31,6 +40,14 @@ test('G2 正例：負 lag 於上限內 → 可行、允許重疊', () => {
   };
   const r = schedule(input);
   assert.equal(r.ok, true);
+  if (!r.ok) return;
+  const a = r.tasks.find((t) => t.id === 'A')!;
+  const b = r.tasks.find((t) => t.id === 'B')!;
+  // 實際重疊：B 開始早於 A 完成，且重疊量恰為 1 工作日（負 lag 造成）
+  assert.ok(b.earlyStart < a.earlyFinish, 'B 應與 A 重疊');
+  assert.equal(workingMinutesBetween(b.earlyStart, a.earlyFinish, CAL), DAY);
+  // FS−1d：B 開始 = A 完成往前 1 工作日
+  assert.equal(b.earlyStart, subtractWorking(a.earlyFinish, DAY, CAL));
 });
 
 test('G2 邊界負例：負 lag 超過自訂上限 → lag_out_of_bounds', () => {
@@ -115,12 +132,7 @@ test('G3 free float：非驅動前置具自由浮時、驅動前置為 0', () =>
 // G4 跨日曆相依（§7：跨日曆比較 UTC 事件後轉換；lag 用邊指定日曆）
 // A 用台北日曆(+8, 09–12/13–18)，B 用 UTC 日曆(+0, 09–17 無午休)。
 // =============================================================================
-test('G4 跨日曆：後續依自身日曆銜接前置（UTC 事件比較）', () => {
-  const CALU: Calendar = {
-    id: 'CALU',
-    tzOffsetMinutes: 0,
-    weekly: [1, 2, 3, 4, 5].map((wd) => ({ weekday: wd, startMinuteOfDay: 9 * 60, endMinuteOfDay: 17 * 60 })),
-  };
+test('G4 跨日曆：後續於前置完成之 UTC 事件（落在後續工作時段內）直接銜接', () => {
   const anchorUtc = Math.floor(Date.parse('2027-03-05T12:00:00Z') / 60000);
   const input: ScheduleInput = {
     calendars: [CAL, CALU],
@@ -140,14 +152,93 @@ test('G4 跨日曆：後續依自身日曆銜接前置（UTC 事件比較）', (
   if (!r.ok) return;
   const a = r.tasks.find((t) => t.id === 'A')!;
   const b = r.tasks.find((t) => t.id === 'B')!;
-  const utc = (m: number) => new Date(m * 60000).toISOString().slice(0, 16) + 'Z';
   // A 台北一個工作日完成 = 03-05 18:00 台北 = 10:00Z
   assert.equal(utc(a.earlyFinish), '2027-03-05T10:00Z');
-  // B（UTC 日曆）於 A 完成之 UTC 事件銜接：10:00Z 在 CALU 工作時段內 → 直接開始
+  // 10:00Z 落在 CALU(09–17Z) 工作時段內 → B 直接開始
   assert.equal(utc(b.earlyStart), '2027-03-05T10:00Z');
   assert.equal(utc(b.earlyFinish), '2027-03-05T12:00Z');
-  // FS 界限成立：B 開始不早於 A 完成（同一 UTC 瞬間）
   assert.ok(b.earlyStart >= a.earlyFinish);
+});
+
+test('G4 跨日曆：前置完成落在後續「非工作時段」→ 後續對齊自身日曆下一工作時段', () => {
+  // 以 MSO 釘住 A 於台北 09:00 起，3h → 台北 12:00 完成 = 04:00Z，落在 CALU(09–17Z) 之前。
+  // B（CALU）不得於 04:00Z 開始，須前移至 CALU 次一工作時段起點 09:00Z。
+  const anchorUtc = Math.floor(Date.parse('2027-03-08T11:00:00Z') / 60000);
+  const input: ScheduleInput = {
+    calendars: [CAL, CALU],
+    tasks: [
+      { id: 'ANCH', type: 'anchor', durationMinutes: 0, calendarId: 'CALU' },
+      {
+        id: 'A', type: 'task', durationMinutes: 3 * HOUR, calendarId: 'CAL',
+        constraint: { type: 'MSO', date: taipei('2027-03-05T09:00') },
+      },
+      { id: 'B', type: 'task', durationMinutes: 2 * HOUR, calendarId: 'CALU' },
+    ],
+    dependencies: [
+      { predecessorId: 'A', successorId: 'B', relation: 'FS', lagMinutes: 0 },
+      { predecessorId: 'B', successorId: 'ANCH', relation: 'FS', lagMinutes: 0 },
+    ],
+    anchor: { taskId: 'ANCH', instant: anchorUtc },
+  };
+  const r = schedule(input);
+  assert.equal(r.ok, true);
+  if (!r.ok) return;
+  const a = r.tasks.find((t) => t.id === 'A')!;
+  const b = r.tasks.find((t) => t.id === 'B')!;
+  assert.equal(utc(a.earlyFinish), '2027-03-05T04:00Z'); // 台北 12:00 = 04:00Z（CALU 非工作時段）
+  // B 不在 04:00Z 開始，而是對齊 CALU 次一工作時段 09:00Z
+  assert.equal(utc(b.earlyStart), '2027-03-05T09:00Z');
+  assert.equal(utc(b.earlyFinish), '2027-03-05T11:00Z');
+  assert.ok(b.earlyStart >= a.earlyFinish); // FS 界限仍成立（同一 UTC 軸比較）
+});
+
+// =============================================================================
+// G5 超期關鍵（§7：負浮時標為超期關鍵）
+// 已完成但落後之工作（實績晚於掛件錨點允許）→ 既成事實：仍產出排程並標 overCritical，
+// 落後沿後續傳遞至錨點。無實績之限制/預測超出仍為衝突（見 T07/G1/G6 負例）。
+// =============================================================================
+test('G5 正例：完成實績晚於掛件允許 → overCritical、負浮時、仍可產出', () => {
+  const input: ScheduleInput = {
+    calendars: [CAL],
+    tasks: [
+      { id: 'ANCH', type: 'anchor', durationMinutes: 0, calendarId: 'CAL' },
+      {
+        id: 'A', type: 'task', durationMinutes: 2 * DAY, calendarId: 'CAL',
+        actualStart: taipei('2027-01-11T09:00'), actualFinish: taipei('2027-01-15T18:00'),
+      },
+    ],
+    dependencies: [{ predecessorId: 'A', successorId: 'ANCH', relation: 'FS', lagMinutes: 0 }],
+    anchor: { taskId: 'ANCH', instant: taipei('2027-01-11T18:00') }, // 掛件早於實際完成
+  };
+  const r = schedule(input);
+  assert.equal(r.ok, true); // 既成事實之落後不拒絕，仍產出
+  if (!r.ok) return;
+  const a = r.tasks.find((t) => t.id === 'A')!;
+  const anch = r.tasks.find((t) => t.id === 'ANCH')!;
+  assert.ok(a.totalFloatMinutes < 0, '落後工作總浮時應為負');
+  assert.equal(a.critical, true);
+  assert.equal(a.overCritical, true);
+  // 落後沿後續傳遞：錨點亦標為超期關鍵
+  assert.equal(anch.overCritical, true);
+  assert.ok(anch.totalFloatMinutes < 0);
+});
+
+test('G5 對照：無實績之限制超出（MFO 晚於掛件）仍為衝突，不標 overCritical', () => {
+  const input: ScheduleInput = {
+    calendars: [CAL],
+    tasks: [
+      { id: 'ANCH', type: 'anchor', durationMinutes: 0, calendarId: 'CAL' },
+      {
+        id: 'A', type: 'task', durationMinutes: DAY, calendarId: 'CAL',
+        constraint: { type: 'MFO', date: taipei('2027-01-20T18:00') },
+      },
+    ],
+    dependencies: [{ predecessorId: 'A', successorId: 'ANCH', relation: 'FS', lagMinutes: 0 }],
+    anchor: { taskId: 'ANCH', instant: taipei('2027-01-11T18:00') },
+  };
+  const r = schedule(input);
+  assert.equal(r.ok, false); // 規劃衝突，拒絕發布
+  if (!r.ok) assert.ok(r.conflicts.some((c) => c.kind === 'constraint_conflict'));
 });
 
 // =============================================================================
@@ -197,12 +288,15 @@ test('G6 負例：進行中剩餘工時無法於掛件前完成 → 衝突', () 
 // =============================================================================
 // G9 late_days（§7：late_days = max(0, countWorkingDays(baseline.finish, forecast.finish)))
 // =============================================================================
-test('G9 late_days：預測晚於基準 → 正逾期工作日；不晚於 → 0', () => {
-  // 基準 週一 03-01 18:00，預測 週四 03-04 18:00 → 週一~週四 = 4 個工作日
-  assert.equal(lateDays(taipei('2027-03-01T18:00'), taipei('2027-03-04T18:00'), CAL), 4);
+test('G9 late_days：起日不多算、跨週末不計、不晚於 → 0', () => {
+  // 基準 週一 03-01 18:00（工作結束邊界）→ 預測 週四 03-04 18:00：
+  // 起日週一已無剩餘工作分鐘，不計；逾期為 週二、週三、週四 = 3 個工作日（修正起日多算）。
+  assert.equal(lateDays(taipei('2027-03-01T18:00'), taipei('2027-03-04T18:00'), CAL), 3);
+  // 起日非結束邊界：週一 09:00 → 週三 18:00 = 週一、二、三 = 3
+  assert.equal(lateDays(taipei('2027-03-01T09:00'), taipei('2027-03-03T18:00'), CAL), 3);
   // 預測早於/等於基準 → 0（未逾期）
   assert.equal(lateDays(taipei('2027-03-04T18:00'), taipei('2027-03-01T18:00'), CAL), 0);
   assert.equal(lateDays(taipei('2027-03-01T18:00'), taipei('2027-03-01T18:00'), CAL), 0);
-  // 跨週末不計：週五 03-05 → 次週一 03-08 = 週五、週一 = 2 個工作日
-  assert.equal(lateDays(taipei('2027-03-05T18:00'), taipei('2027-03-08T18:00'), CAL), 2);
+  // 跨週末不計、起日不多算：週五 03-05 18:00 → 次週一 03-08 18:00 = 僅 週一 = 1 個工作日
+  assert.equal(lateDays(taipei('2027-03-05T18:00'), taipei('2027-03-08T18:00'), CAL), 1);
 });

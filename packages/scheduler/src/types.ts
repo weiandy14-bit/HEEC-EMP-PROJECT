@@ -119,6 +119,12 @@ export interface ScheduledTask {
   totalFloatMinutes: number;
   freeFloatMinutes: number;
   critical: boolean;
+  /**
+   * 超期關鍵（§7「若已有負浮時需標為超期關鍵」）：
+   * 當已鎖定之實績（actualStart 晚於允許最晚開始、或 actualFinish 晚於允許最晚完成）
+   * 使總浮時為負時為 true。此為既成事實而非可拒絕之規劃衝突，仍產出排程並標記。
+   */
+  overCritical: boolean;
 }
 
 export interface ScheduleConflict {

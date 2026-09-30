@@ -256,8 +256,14 @@ export function schedule(input: ScheduleInput): ScheduleResult {
     EF.set(id, ef);
   }
 
-  // ---- 浮時、關鍵路徑、可行性 ----
-  const results: ScheduledTask[] = [];
+  // ---- 浮時、超出量、可行性 ----
+  interface Calc {
+    es: Minute; ef: Minute; ls: Minute; lf: Minute;
+    totalFloat: number; freeFloat: number;
+    startOverrun: number; finishOverrun: number;
+    lockedOverrun: boolean; // 超出完全由已鎖定實績造成（既成事實之落後）
+  }
+  const calc = new Map<string, Calc>();
   for (const id of order) {
     const t = ctx.tasks.get(id)!;
     const cal = calOf(ctx, t);
@@ -278,7 +284,6 @@ export function schedule(input: ScheduleInput): ScheduleResult {
         const succ = ctx.tasks.get(d.successorId)!;
         const succCal = calOf(ctx, succ);
         const lagCal = lagCalOf(ctx, d);
-        // 後續 ES 相對本任務對應事件之允許延遲
         const b = forwardBound(d.relation, es, ef, d.lagMinutes, lagCal);
         const succES = ES.get(d.successorId)!;
         const succEF = EF.get(d.successorId)!;
@@ -290,27 +295,63 @@ export function schedule(input: ScheduleInput): ScheduleResult {
     }
     if (!Number.isFinite(freeFloat)) freeFloat = 0;
 
-    // 可行性以「工作時間」判斷：Fri18:00 與 Mon09:00 為同一工作位置（其間 0 工作分鐘），
-    // 不得誤判為衝突。僅當 ES 晚於 LS 或 EF 晚於 LF 且其間存在實際工作分鐘時才衝突。
+    // 超出以「工作時間」判斷（Fri18:00 與 Mon09:00 同一工作位置，其間 0 工作分鐘，不誤判）。
     const startOverrun = es > ls ? workingMinutesBetween(ls, es, cal) : 0;
     const finishOverrun = ef > lf ? workingMinutesBetween(lf, ef, cal) : 0;
-    if (startOverrun > 0 || finishOverrun > 0) {
-      conflicts.push({
-        kind: 'constraint_conflict',
-        message: `無法於錨點允許日期內完成：${id}（超出 start ${startOverrun} / finish ${finishOverrun} 工作分鐘）`,
-        taskIds: [id],
-      });
+    // 超出是否完全由已鎖定實績造成（actualStart 晚於 LS、actualFinish 晚於 LF）
+    const startLocked = t.actualStart !== undefined && es === t.actualStart;
+    const finishLocked = t.actualFinish !== undefined && ef === t.actualFinish;
+    const lockedOverrun =
+      (startOverrun > 0 || finishOverrun > 0) &&
+      (startOverrun === 0 || startLocked) &&
+      (finishOverrun === 0 || finishLocked);
+
+    calc.set(id, { es, ef, ls, lf, totalFloat, freeFloat, startOverrun, finishOverrun, lockedOverrun });
+  }
+
+  // 既成事實之落後會沿後續邊向下游傳遞：以鎖定實績超出之工作為種子，
+  // 其可達之後續（含錨點）之超出亦屬「超期關鍵」而非可拒絕之規劃衝突。
+  const behind = new Set<string>();
+  const queue: string[] = [];
+  for (const id of order) if (calc.get(id)!.lockedOverrun) { behind.add(id); queue.push(id); }
+  while (queue.length) {
+    const id = queue.shift()!;
+    for (const d of ctx.outEdges.get(id) ?? []) {
+      if (scheduled.has(d.successorId) && !behind.has(d.successorId)) {
+        behind.add(d.successorId);
+        queue.push(d.successorId);
+      }
+    }
+  }
+
+  const results: ScheduledTask[] = [];
+  for (const id of order) {
+    const c = calc.get(id)!;
+    let overCritical = false;
+    if (c.startOverrun > 0 || c.finishOverrun > 0) {
+      if (c.lockedOverrun || behind.has(id)) {
+        // 既成事實之落後（本任務鎖定超出，或位於落後任務之下游）：標記而不拒絕
+        overCritical = true;
+      } else {
+        // 預測/限制/前置造成之超出（如 MFO 晚於掛件、進行中剩餘無法趕上）：拒絕發布
+        conflicts.push({
+          kind: 'constraint_conflict',
+          message: `無法於錨點允許日期內完成：${id}（超出 start ${c.startOverrun} / finish ${c.finishOverrun} 工作分鐘）`,
+          taskIds: [id],
+        });
+      }
     }
 
     results.push({
       id,
-      earlyStart: es,
-      earlyFinish: ef,
-      lateStart: ls,
-      lateFinish: lf,
-      totalFloatMinutes: totalFloat,
-      freeFloatMinutes: freeFloat,
-      critical: totalFloat <= 0,
+      earlyStart: c.es,
+      earlyFinish: c.ef,
+      lateStart: c.ls,
+      lateFinish: c.lf,
+      totalFloatMinutes: c.totalFloat,
+      freeFloatMinutes: c.freeFloat,
+      critical: c.totalFloat <= 0,
+      overCritical,
     });
   }
 

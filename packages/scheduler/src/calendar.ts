@@ -190,7 +190,11 @@ export function lateDays(baselineFinish: Minute, forecastFinish: Minute, cal: Ca
   return Math.max(0, countWorkingDays(baselineFinish, forecastFinish, cal));
 }
 
-/** 計算 [a,b) 涵蓋之工作日數（用於逾期天數，見 §7 late_days）。 */
+/**
+ * 計算 [a,b) 內「有實際工作分鐘」之工作日數（用於逾期天數，見 §7 late_days）。
+ * 僅計在半開區間 [a,b) 內確實含有工作時段之日；當 a 落在某日工作結束邊界（如 18:00）
+ * 時，該起始日已無剩餘工作分鐘，故不計入，避免起日多算。
+ */
 export function countWorkingDays(a: Minute, b: Minute, cal: Calendar): number {
   if (b <= a) return 0;
   const startDay = toLocalParts(a, cal).dayIndex;
@@ -198,7 +202,13 @@ export function countWorkingDays(a: Minute, b: Minute, cal: Calendar): number {
   let count = 0;
   for (let d = startDay; d <= endDay && d - startDay < MAX_DAYS_SCAN; d++) {
     const wins = windowsForDay(cal, dayIndexToDateStr(d), weekdayOf(d));
-    if (wins.length > 0) count++;
+    let dayMinutes = 0;
+    for (const w of wins) {
+      const lo = Math.max(a, localToAbs(d, w.start, cal));
+      const hi = Math.min(b, localToAbs(d, w.end, cal));
+      if (hi > lo) dayMinutes += hi - lo;
+    }
+    if (dayMinutes > 0) count++;
   }
   return count;
 }

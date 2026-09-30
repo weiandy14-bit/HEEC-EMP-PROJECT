@@ -59,7 +59,7 @@
 - **預期結果**：(a) → 422；(b) → 200，status=approved，稽核記文號 diff。
 - **完成定義**：缺欄負例 + 齊備正例通過。
 
-### P3-04 交付物狀態流轉與版本（含 locked / DELETE 追加條件）
+### P3-04 交付物狀態流轉與版本（含 locked / DELETE 追加條件）　（狀態：✅ 已實作，6 整合測試通過並納入 CI）
 - **功能**：draft→submitted→accepted/rejected→locked；`revision` 案內唯一。**locked 不可直接修改，後續變更建立新 revision**；**DELETE 採封存（`archived_at`）並保留稽核**。
 - **資料表·API**：`deliverables`（status, revision, *_at, approver_id, locked_at, archived_at）；`GET/POST/PATCH/DELETE /projects/{p}/deliverables`。
 - **測試輸入**：建 rev A → submit → accept → lock；對 locked 發 PATCH；對 locked 之變更改建 rev B；DELETE 一筆後查稽核。

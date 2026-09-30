@@ -6,7 +6,7 @@
 set -euo pipefail
 BASE="${BASE:-http://localhost:3000/api/v1}"
 ORG=11111111-1111-1111-1111-111111111111
-USR=22222222-2222-2222-2222-222222222222
+USR=22222222-2222-4222-8222-222222222222
 CAL=33333333-3333-4333-8333-333333333333
 H=(-H "X-Org-Id: $ORG" -H "X-User-Id: $USR" -H "X-Roles: PM,Lead" -H "Content-Type: application/json")
 jid() { node -pe "JSON.parse(require('fs').readFileSync(0)).id"; }

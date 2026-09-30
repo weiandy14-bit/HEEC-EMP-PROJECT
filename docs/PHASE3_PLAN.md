@@ -38,7 +38,7 @@
 
 > 共通：寫入經伺服器 RBAC + org/project scope；狀態變更寫 `audit_logs`；事件經 `job_outbox` 同交易寫入、worker 冪等消費。
 
-### P3-01 法定審查適用性狀態機
+### P3-01 法定審查適用性狀態機　（狀態：✅ 已實作，8 整合測試通過並納入 CI）
 - **功能**：每案逐專業設定 applicable / N/A / pending；N/A 必填理由，pending 必填責任人＋期限；保留核定者、依據、時間（D04 逐案確認，不預設）。
 - **資料表·API**：`project_statutory_reviews`；`GET/POST /projects/{p}/reviews`、`PATCH /projects/{p}/reviews/{r}`。
 - **測試輸入**：(a) not_applicable 無理由；(b) pending 無 owner/due；(c) applicable ＋ authority 齊備。

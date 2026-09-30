@@ -88,6 +88,9 @@ jobs:
           done
           curl -fsS "http://localhost:${PORT}/api/v1/health"
 
+      - name: API integration tests (Phase 3)
+        run: BASE="http://localhost:${PORT}/api/v1" npm run test:integration -w @heec/api
+
       - name: End-to-end smoke test
         run: BASE="http://localhost:${PORT}/api/v1" bash scripts/smoke.sh
 

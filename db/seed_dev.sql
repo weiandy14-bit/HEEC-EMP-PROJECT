@@ -5,7 +5,7 @@ VALUES ('11111111-1111-1111-1111-111111111111', 'ORG1', '示範組織')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO users (id, org_id, issuer, subject, email, display_name)
-VALUES ('22222222-2222-2222-2222-222222222222',
+VALUES ('22222222-2222-4222-8222-222222222222',
         '11111111-1111-1111-1111-111111111111',
         'https://idp.example', 'pm-subject', 'pm@example.com', 'PM')
 ON CONFLICT DO NOTHING;
@@ -23,4 +23,20 @@ FROM (VALUES
   (3,'09:00','12:00'),(3,'13:00','18:00'),(4,'09:00','12:00'),(4,'13:00','18:00'),
   (5,'09:00','12:00'),(5,'13:00','18:00')
 ) AS v(wd,s,e)
+ON CONFLICT DO NOTHING;
+
+-- 法定審查模板（消防），供 Phase 3 審查功能使用
+INSERT INTO statutory_review_templates (id, org_id, code, name, jurisdiction_scope, discipline_id, status, current_version)
+VALUES ('44444444-4444-4444-8444-444444444444',
+        '11111111-1111-1111-1111-111111111111', 'FIRE', '消防審查', '示範縣市',
+        (SELECT id FROM disciplines WHERE code='FIRE'), 'active', 1)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO statutory_review_template_steps (org_id, template_id, version_no, step_code, sequence, name, required)
+SELECT '11111111-1111-1111-1111-111111111111', '44444444-4444-4444-8444-444444444444', 1, sc, seq, nm, true
+FROM (VALUES
+  ('APPLICABILITY', 1, '適用確認'),
+  ('SUBMIT',        2, '送審'),
+  ('APPROVE',       3, '核可')
+) AS v(sc, seq, nm)
 ON CONFLICT DO NOTHING;

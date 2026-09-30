@@ -66,7 +66,7 @@
 - **預期結果**：流轉正常；locked PATCH → 409/422；rev B 建立成功且 rev A 不變；DELETE → 標 `archived_at`、實體仍在、稽核有刪除事件。
 - **完成定義**：流轉正例 + locked 不可改負例 + 新 revision 正例 + 封存保留稽核測試通過。
 
-### P3-05 會議與紀錄
+### P3-05 會議與紀錄　（狀態：✅ 已實作，4 整合測試通過並納入 CI）
 - **功能**：會議排程、狀態 scheduled/held/cancelled、紀錄附件關聯。
 - **資料表·API**：`meetings`、`attachments`；`GET/POST/PATCH /projects/{p}/meetings`。
 - **測試輸入**：(a) 建會議掛 minutes、標 held；(b) ends_at 早於 starts_at。

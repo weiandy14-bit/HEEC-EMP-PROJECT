@@ -73,7 +73,7 @@
 - **預期結果**：(a) 成功、附件關聯有效、狀態記稽核；(b) → 422（CHECK ends≥starts）。
 - **完成定義**：正例 + 時間區間負例通過。
 
-### P3-06 週工作衍生與跨週顯示／去重（含追加條件）
+### P3-06 週工作衍生與跨週顯示／去重（含追加條件）　（狀態：✅ 已實作，4 整合測試通過並納入 CI）
 - **功能**：由工作／審查步驟／會議衍生 `weekly_items`；**跨週顯示條件＝工作期間與查詢週相交，或逾期且未完成**；逾期置頂；完成回寫。**`source_key` 僅資料去重，不決定週別**。
 - **資料表·API**：`weekly_items`（source_key, type, due_at, status, completed_at, period 起訖）；`GET /projects/{p}/weekly-items?week=…`、`POST`、`PATCH`。
 - **測試輸入**：(a) 期間橫跨 W 與 W+1 之項，分別查兩週；(b) 逾期未完成之項查其後任一週；(c) 同 `source_key` 觸發兩次。

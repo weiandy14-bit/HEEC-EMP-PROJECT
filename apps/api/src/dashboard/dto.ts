@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsString, IsUUID, IsDateString, IsInt, Min, Max } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID, IsDateString, IsInt, Min, Max, Matches } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class GanttQueryDto {
@@ -13,4 +13,11 @@ export class GanttQueryDto {
   @IsOptional() @IsUUID() project_id?: string;
   @IsOptional() @IsString() cursor?: string; // base64url(code)，游標分頁
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(500) limit?: number;
+}
+
+export class WorkloadQueryDto {
+  @IsOptional() @Matches(/^\d{4}-W\d{2}$/) from_week?: string; // 起始週（ISO 'YYYY-Www'）
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(12) weeks?: number;
+  @IsOptional() @IsUUID() team_id?: string;
+  @IsOptional() @IsUUID() resource_id?: string;
 }

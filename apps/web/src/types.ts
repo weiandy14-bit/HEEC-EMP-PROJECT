@@ -63,3 +63,59 @@ export interface GanttFilters {
   pm_id?: string;
   discipline?: string;
 }
+
+// ── 頁 C 工程師負荷 ──
+export type LoadFlag = 'over_allocated' | 'simultaneous_conflict' | 'zero_capacity' | 'on_leave';
+
+export interface WorkloadSource {
+  project_id: string;
+  task_id: string;
+  minutes: number;
+  assignment_units: number;
+  booking_type: string;
+}
+
+export interface WorkloadCell {
+  week: string;
+  demand_minutes: number;
+  capacity_minutes: number;
+  load_rate: number | null;
+  flags: LoadFlag[];
+  sources: WorkloadSource[];
+}
+
+export interface WorkloadResource {
+  resource_id: string;
+  name: string;
+  max_units: number;
+  team_id: string | null;
+  cells: WorkloadCell[];
+}
+
+export interface WorkloadUnassigned {
+  project_id: string;
+  task_id: string;
+  wbs_code: string;
+  name: string;
+  planned_start: string | null;
+  planned_finish: string | null;
+  duration_minutes: number;
+}
+
+export interface TeamSummaryRow {
+  team_id: string | null;
+  weeks: { week: string; demand_minutes: number; capacity_minutes: number; load_rate: number | null }[];
+}
+
+export interface WorkloadResponse {
+  weeks: string[];
+  resources: WorkloadResource[];
+  unassigned: WorkloadUnassigned[];
+  teamSummary: TeamSummaryRow[];
+}
+
+export interface WorkloadFilters {
+  from_week?: string;
+  team_id?: string;
+  resource_id?: string;
+}

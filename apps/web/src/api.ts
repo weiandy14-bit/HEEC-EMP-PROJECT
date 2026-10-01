@@ -1,4 +1,4 @@
-import type { GanttResponse, GanttFilters } from './types';
+import type { GanttResponse, GanttFilters, WorkloadResponse, WorkloadFilters } from './types';
 
 export interface ApiResult<T> {
   status: number;
@@ -39,5 +39,17 @@ export async function fetchGantt(q: GanttQuery): Promise<ApiResult<GanttResponse
   });
   let body: GanttResponse | null = null;
   try { body = (await res.json()) as GanttResponse; } catch { body = null; }
+  return { status: res.status, body };
+}
+
+export async function fetchWorkload(q: WorkloadFilters & { weeks?: number }): Promise<ApiResult<WorkloadResponse>> {
+  const qs = new URLSearchParams();
+  if (q.from_week) qs.set('from_week', q.from_week);
+  qs.set('weeks', String(q.weeks ?? 4));
+  if (q.team_id) qs.set('team_id', q.team_id);
+  if (q.resource_id) qs.set('resource_id', q.resource_id);
+  const res = await fetch(`/api/v1/dashboard/workload?${qs.toString()}`, { headers: { ...devHeaders() } });
+  let body: WorkloadResponse | null = null;
+  try { body = (await res.json()) as WorkloadResponse; } catch { body = null; }
   return { status: res.status, body };
 }

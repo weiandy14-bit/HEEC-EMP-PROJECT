@@ -75,3 +75,34 @@ body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, "Not
 .load-more { padding: 10px; text-align: center; }
 .load-more button { border: 1px solid var(--border); background: var(--panel); color: var(--text); padding: 6px 14px; border-radius: 6px; cursor: pointer; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+
+/* 導覽 */
+.app-root { height: 100%; display: flex; flex-direction: column; }
+.app-nav { display: flex; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.app-nav button { border: 1px solid var(--border); background: var(--bg); color: var(--text); padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+.app-nav button[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* 頁 C 負荷矩陣 */
+.workload-scroll { flex: 1; overflow: auto; }
+table.workload { border-collapse: collapse; width: 100%; }
+table.workload th, table.workload td { border: 1px solid var(--border); padding: 0; vertical-align: top; }
+table.workload thead th { position: sticky; top: 0; background: var(--panel); z-index: 3; padding: 6px 8px; }
+table.workload th.name-col { position: sticky; left: 0; background: var(--panel); z-index: 2; min-width: 160px; text-align: start; padding: 6px 8px; }
+.cell { min-width: 120px; }
+.cell-btn { display: flex; flex-direction: column; gap: 2px; width: 100%; border: 0; background: transparent; color: inherit; padding: 6px 8px; cursor: pointer; text-align: start; }
+.cell .pct { font-weight: 700; font-variant-numeric: tabular-nums; }
+.cell .dc { font-size: 11px; color: var(--muted); }
+.cell .band-label { font-size: 11px; }
+.band-normal { background: color-mix(in srgb, #22c55e 14%, transparent); }
+.band-high   { background: color-mix(in srgb, #f59e0b 20%, transparent); }
+.band-over   { background: color-mix(in srgb, #ef4444 22%, transparent); }
+.band-zero   { background: repeating-linear-gradient(45deg, var(--panel), var(--panel) 6px, var(--border) 6px, var(--border) 7px); }
+.flags { display: flex; flex-wrap: wrap; gap: 3px; }
+.flag { font-size: 10px; border-radius: 8px; padding: 0 5px; background: var(--border); color: var(--text); }
+.flag-over_allocated, .flag-simultaneous_conflict { background: var(--critical); color: #fff; }
+.sources { padding: 6px 8px; border-top: 1px dashed var(--border); font-size: 12px; }
+.sources ul, .unassigned ul { margin: 4px 0; padding-inline-start: 16px; }
+.tag-cover { margin-inline-start: 6px; font-size: 10px; color: #fff; background: var(--accent); border-radius: 8px; padding: 0 5px; }
+.muted { color: var(--muted); }
+.unassigned { padding: 8px 16px; border-top: 1px solid var(--border); max-height: 22%; overflow: auto; }
+.unassigned h2 { font-size: 13px; margin: 4px 0; }

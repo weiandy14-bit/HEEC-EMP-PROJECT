@@ -21,3 +21,9 @@ export class WorkloadQueryDto {
   @IsOptional() @IsUUID() team_id?: string;
   @IsOptional() @IsUUID() resource_id?: string;
 }
+
+export class WeeklyBoardQueryDto {
+  @IsOptional() @Matches(/^(prev|this|next|\d{4}-W\d{2})$/) week?: string;
+  @IsOptional() @IsIn(['交圖', '送審', '補正', '會議']) type?: string;
+  @IsOptional() @IsUUID() assignee?: string;
+}

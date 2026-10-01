@@ -119,3 +119,32 @@ export interface WorkloadFilters {
   team_id?: string;
   resource_id?: string;
 }
+
+// ── 頁 B 本週重要事項 ──
+export type WeeklyType = '交圖' | '送審' | '補正' | '會議';
+
+export interface WeeklyItem {
+  id: string;
+  type: WeeklyType;
+  title: string;
+  project_id: string;
+  project_name: string;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  source: { kind: string; id: string };
+  due_at: string | null;
+  status: string;
+  overdue: boolean;
+}
+
+export interface WeeklyBoardResponse {
+  weekStart: string;
+  weekEnd: string;
+  items: WeeklyItem[];
+}
+
+export interface WeeklyBoardFilters {
+  week: string; // prev | this | next | YYYY-Www
+  type?: WeeklyType;
+  assignee?: string;
+}

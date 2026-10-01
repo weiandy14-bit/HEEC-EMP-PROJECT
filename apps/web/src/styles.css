@@ -106,3 +106,23 @@ table.workload th.name-col { position: sticky; left: 0; background: var(--panel)
 .muted { color: var(--muted); }
 .unassigned { padding: 8px 16px; border-top: 1px solid var(--border); max-height: 22%; overflow: auto; }
 .unassigned h2 { font-size: 13px; margin: 4px 0; }
+
+/* 頁 B 本週重要事項 */
+.week-group button { border: 1px solid var(--border); background: var(--panel); color: var(--text); padding: 4px 10px; border-radius: 6px; cursor: pointer; }
+.week-group button[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+.overdue-band { border-bottom: 2px solid var(--critical); padding: 6px 12px; background: color-mix(in srgb, var(--critical) 10%, transparent); }
+.overdue-band h2 { font-size: 13px; margin: 4px 0; color: var(--critical); }
+.week-scroll { flex: 1; overflow: auto; }
+.week-grid { display: grid; grid-template-columns: repeat(5, minmax(180px, 1fr)); gap: 8px; padding: 10px; min-width: 920px; }
+.day-col { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px; min-height: 120px; }
+.day-col h3 { font-size: 12px; margin: 4px; color: var(--muted); position: sticky; top: 0; }
+.cards { display: flex; flex-direction: column; gap: 6px; }
+.item-card { border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; background: var(--bg); }
+.item-card.overdue { border-color: var(--critical); }
+.item-head { display: flex; gap: 6px; align-items: center; }
+.type-badge { font-size: 10px; border-radius: 8px; padding: 0 6px; color: #fff; background: var(--accent); }
+.type-deliverable { background: var(--planned); }
+.type-review_step { background: #8b5cf6; }
+.type-meeting { background: #0ea5e9; }
+.item-title { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-meta { display: flex; gap: 8px; font-size: 11px; color: var(--muted); margin-top: 2px; flex-wrap: wrap; }

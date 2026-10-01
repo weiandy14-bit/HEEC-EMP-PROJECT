@@ -1,7 +1,8 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
 import { GanttService } from './gantt.service';
 import { WorkloadService } from './workload.service';
-import { GanttQueryDto, WorkloadQueryDto } from './dto';
+import { WeeklyBoardService } from './weekly.service';
+import { GanttQueryDto, WorkloadQueryDto, WeeklyBoardQueryDto } from './dto';
 import { AuthGuard, CurrentUser, type UserContext } from '../auth/request-context';
 import { RolesGuard } from '../auth/roles.guard';
 
@@ -12,11 +13,17 @@ export class DashboardController {
   constructor(
     private readonly gantt: GanttService,
     private readonly workload: WorkloadService,
+    private readonly weekly: WeeklyBoardService,
   ) {}
 
   @Get('gantt')
   async portfolioGantt(@CurrentUser() user: UserContext, @Query() q: GanttQueryDto) {
     return this.gantt.portfolio(user, q);
+  }
+
+  @Get('weekly')
+  async weeklyBoard(@CurrentUser() user: UserContext, @Query() q: WeeklyBoardQueryDto) {
+    return this.weekly.board(user, q);
   }
 
   @Get('workload')

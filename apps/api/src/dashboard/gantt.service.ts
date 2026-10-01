@@ -51,23 +51,45 @@ export class GanttService {
     return status;
   }
 
+  // 可視範圍述詞（project scope）：建立者 / PM / Admin / 專案成員，否則不可見。
+  // 參數位置：$1=org, $3=userId, $4=isAdmin（與 portfolio 的參數配置一致）。
+  private static readonly VISIBILITY =
+    `( $4 OR p.created_by = $3 OR p.pm_user_id = $3
+       OR EXISTS (SELECT 1 FROM project_members m
+                   WHERE m.project_id = p.id AND m.user_id = $3 AND m.archived_at IS NULL) )`;
+
+  private encodeCursor(code: string): string {
+    return Buffer.from(code, 'utf8').toString('base64url');
+  }
+  private decodeCursor(cursor?: string): string | null {
+    if (!cursor) return null;
+    try { return Buffer.from(cursor, 'base64url').toString('utf8'); } catch { return null; }
+  }
+
   async portfolio(ctx: UserContext, q: GanttQueryDto) {
     const zoom = q.zoom ?? 'week';
     const status = this.resolveStatus(q.status);
-    const limit = q.limit ?? 100;
+    const limit = q.limit ?? 50;
+    const isAdmin = ctx.roles.includes('Admin');
+    const afterCode = this.decodeCursor(q.cursor);
 
-    // 1) 可視案件（org scope；僅該狀態、未封存）
-    const params: unknown[] = [ctx.orgId, status];
-    let sql = `SELECT id, name, status, health, permit_filing_date, pm_user_id
-                 FROM projects
-                WHERE org_id = $1 AND status = $2 AND archived_at IS NULL`;
-    if (q.pm_id) { params.push(q.pm_id); sql += ` AND pm_user_id = $${params.length}`; }
-    if (q.project_id) { params.push(q.project_id); sql += ` AND id = $${params.length}`; }
-    params.push(limit);
-    sql += ` ORDER BY code LIMIT $${params.length}`;
-    const projects = await this.db.query<any>(sql, params);
+    // 1) 可視案件（org scope + project scope；僅該狀態、未封存；游標 keyset by code）
+    const params: unknown[] = [ctx.orgId, status, ctx.userId, isAdmin];
+    let sql = `SELECT p.id, p.code, p.name, p.status, p.health, p.permit_filing_date, p.pm_user_id
+                 FROM projects p
+                WHERE p.org_id = $1 AND p.status = $2 AND p.archived_at IS NULL
+                  AND ${GanttService.VISIBILITY}`;
+    if (q.pm_id) { params.push(q.pm_id); sql += ` AND p.pm_user_id = $${params.length}`; }
+    if (q.project_id) { params.push(q.project_id); sql += ` AND p.id = $${params.length}`; }
+    if (afterCode) { params.push(afterCode); sql += ` AND p.code > $${params.length}`; }
+    params.push(limit + 1); // 多取一列以判斷是否尚有下一頁
+    sql += ` ORDER BY p.code LIMIT $${params.length}`;
+    const rows = await this.db.query<any>(sql, params);
+    const hasMore = rows.length > limit;
+    const projects = hasMore ? rows.slice(0, limit) : rows;
+    const nextCursor = hasMore ? this.encodeCursor(projects[projects.length - 1].code) : null;
     if (projects.length === 0) {
-      return { zoom, from: q.from ?? null, to: q.to ?? null, projects: [] };
+      return { zoom, from: q.from ?? null, to: q.to ?? null, next_cursor: null, projects: [] };
     }
     const ids = projects.map((p) => p.id);
 
@@ -118,7 +140,7 @@ export class GanttService {
     const byProject = new Map<string, any>();
     for (const p of projects) {
       byProject.set(p.id, {
-        id: p.id, name: p.name, status: p.status, health: p.health,
+        id: p.id, code: p.code, name: p.name, status: p.status, health: p.health,
         permit_filing_date: p.permit_filing_date, pm_user_id: p.pm_user_id,
         tasks: [] as GanttTask[], dependencies: [] as GanttDependency[], milestones: [] as GanttMilestone[],
       });
@@ -153,17 +175,20 @@ export class GanttService {
     }
 
     return {
-      zoom, from: q.from ?? null, to: q.to ?? null,
+      zoom, from: q.from ?? null, to: q.to ?? null, next_cursor: nextCursor,
       projects: projects.map((p) => byProject.get(p.id)),
     };
   }
 
-  /** 單案 drill-down（跨案/跨 org → 404，不洩存在性）。 */
+  /** 單案 drill-down（跨 org 或同 org 無該案權限 → 404，不洩存在性）。 */
   async projectGantt(ctx: UserContext, projectId: string) {
+    const isAdmin = ctx.roles.includes('Admin');
     const p = await this.db.queryOne<any>(
-      `SELECT id, name, status, health, permit_filing_date, pm_user_id
-         FROM projects WHERE org_id = $1 AND id = $2 AND archived_at IS NULL`,
-      [ctx.orgId, projectId],
+      `SELECT p.id, p.status
+         FROM projects p
+        WHERE p.org_id = $1 AND p.id = $2 AND p.archived_at IS NULL
+          AND ${GanttService.VISIBILITY}`,
+      [ctx.orgId, projectId, ctx.userId, isAdmin],
     );
     if (!p) throw DomainError.notFound('專案');
     return this.portfolio(ctx, { project_id: projectId, status: p.status } as GanttQueryDto)

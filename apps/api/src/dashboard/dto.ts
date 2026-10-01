@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsUUID, IsDateString, IsInt, Min, Max } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID, IsDateString, IsInt, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class GanttQueryDto {
@@ -11,5 +11,6 @@ export class GanttQueryDto {
   @IsOptional() @IsUUID() discipline?: string;
   @IsOptional() @IsUUID() pm_id?: string;
   @IsOptional() @IsUUID() project_id?: string;
+  @IsOptional() @IsString() cursor?: string; // base64url(code)，游標分頁
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(500) limit?: number;
 }

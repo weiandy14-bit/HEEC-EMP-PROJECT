@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { api, createProject, db, closeDb, ORG, FIRE_TEMPLATE } from './helpers.mjs';
+import { api, createProject, db, closeDb, ORG, PM_USER, FIRE_TEMPLATE } from './helpers.mjs';
 
 // 建立「進行中」案件 + 父子任務；回傳 ids
 async function activeProjectWithTasks() {
@@ -120,6 +120,58 @@ test('P4-A4b 單案 drill-down 正例：本 org 進行中案可取其甘特', as
 test('P4-A1 RBAC：Viewer 可讀甘特(唯讀)', async () => {
   const r = await api('GET', `/dashboard/gantt`, { roles: 'Viewer' });
   assert.equal(r.status, 200);
+});
+
+test('P4-A4c project scope：同 org 但無該案權限 → 列表不含、drill-down 404', async () => {
+  const a = await activeProjectWithTasks(); // 由 PM_USER 建立（created_by=PM_USER）
+  // 同 org 另一使用者（非建立者/PM/成員/Admin）
+  const other = randomUUID();
+  const list = await api('GET', `/dashboard/gantt`, { user: other, roles: 'PM,Lead' });
+  assert.equal(list.status, 200);
+  assert.equal(findProject(list.body, a.p), undefined, '無權限者列表不含該案');
+  const drill = await api('GET', `/projects/${a.p}/dashboard/gantt`, { user: other, roles: 'PM,Lead' });
+  assert.equal(drill.status, 404, '無權限者 drill-down → 404（不洩存在性）');
+  // 對照：建立者本人可見且可 drill-down
+  const ownDrill = await api('GET', `/projects/${a.p}/dashboard/gantt`);
+  assert.equal(ownDrill.status, 200);
+});
+
+test('P4-A4d project scope：成員關係授予可見性', async () => {
+  const a = await activeProjectWithTasks();
+  const member = randomUUID();
+  // member 需為 users 之一（FK）；建立 org 內使用者後加入專案成員
+  await db().query(
+    `INSERT INTO users (id, org_id, issuer, subject, email, display_name, status)
+     VALUES ($1,$2,'dev',$4,$3,'成員','active') ON CONFLICT DO NOTHING`,
+    [member, ORG, `m-${member.slice(0, 8)}@test.local`, member]);
+  await db().query(
+    `INSERT INTO project_members (org_id, project_id, user_id, role_code)
+     VALUES ($1,$2,$3,'Engineer')`, [ORG, a.p, member]);
+  const list = await api('GET', `/dashboard/gantt`, { user: member, roles: 'Engineer' });
+  assert.ok(findProject(list.body, a.p), '專案成員可見該案');
+});
+
+test('P4-A5(游標分頁)：101 個可視案件可完整翻頁取得第 101 筆', async () => {
+  // 以 created_by=PM_USER 批次建立 101 個 active 案（確保對 PM_USER 可見）
+  await db().query(
+    `INSERT INTO projects (org_id, code, name, status, permit_filing_date, created_by)
+     SELECT $1, 'PGN-'||lpad(gs::text,3,'0'), '分頁案'||gs, 'active', '2027-01-11', $2
+       FROM generate_series(1,101) gs
+     ON CONFLICT DO NOTHING`,
+    [ORG, PM_USER]);
+
+  const seen = new Set();
+  let cursor = null;
+  for (let i = 0; i < 30; i++) { // 上限保護
+    const qs = `/dashboard/gantt?status=active&limit=50` + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : '');
+    const r = await api('GET', qs);
+    assert.equal(r.status, 200);
+    for (const p of r.body.projects) if (p.code && p.code.startsWith('PGN-')) seen.add(p.code);
+    cursor = r.body.next_cursor;
+    if (!cursor) break;
+  }
+  assert.equal(seen.size, 101, '101 個 PGN 案件全數跨頁取得');
+  assert.ok(seen.has('PGN-101'), '第 101 筆可取得');
 });
 
 test.after(async () => { await closeDb(); });

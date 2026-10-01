@@ -4,8 +4,9 @@ import { DomainError } from '../common/errors';
 
 /**
  * 請求身分脈絡。
- * MVP 以標頭注入（X-Org-Id / X-User-Id / X-Roles）作為開發替身，
- * 正式部署改由 OIDC SSO 驗證後填入（§2、§8）。
+ * X-Org-Id / X-User-Id / X-Roles 僅為**開發／測試環境**之身分替身，
+ * 預設在正式環境（NODE_ENV=production）停用，除非顯式設 AUTH_DEV_HEADERS=1。
+ * 前端**不得**將此標頭當成正式帳號密碼登入方案；正式部署由 OIDC SSO 驗證後填入（§2、§8）。
  */
 export interface UserContext {
   orgId: string;
@@ -13,7 +14,13 @@ export interface UserContext {
   roles: string[];
 }
 
+/** 開發替身標頭是否可用（正式環境預設停用）。 */
+export function devHeadersEnabled(): boolean {
+  return process.env.NODE_ENV !== 'production' || process.env.AUTH_DEV_HEADERS === '1';
+}
+
 export function extractContext(req: Request): UserContext | null {
+  if (!devHeadersEnabled()) return null; // 正式環境不接受開發替身標頭
   const orgId = req.header('X-Org-Id');
   const userId = req.header('X-User-Id');
   if (!orgId || !userId) return null;

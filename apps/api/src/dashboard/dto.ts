@@ -1,0 +1,15 @@
+import { IsIn, IsOptional, IsUUID, IsDateString, IsInt, Min, Max } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class GanttQueryDto {
+  @IsOptional() @IsIn(['day', 'week', 'month']) zoom?: 'day' | 'week' | 'month';
+  // 進行中預設；接受 in_progress 別名（對應 projects.status='active'）
+  @IsOptional() @IsIn(['in_progress', 'active', 'planning', 'on_hold', 'completed', 'cancelled'])
+  status?: string;
+  @IsOptional() @IsDateString() from?: string;
+  @IsOptional() @IsDateString() to?: string;
+  @IsOptional() @IsUUID() discipline?: string;
+  @IsOptional() @IsUUID() pm_id?: string;
+  @IsOptional() @IsUUID() project_id?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(500) limit?: number;
+}

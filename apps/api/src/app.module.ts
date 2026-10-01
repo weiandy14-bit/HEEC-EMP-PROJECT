@@ -11,6 +11,7 @@ import { MeetingsModule } from './meetings/meetings.module';
 import { WeeklyModule } from './weekly/weekly.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { OutboxModule } from './outbox/outbox.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { OutboxModule } from './outbox/outbox.module';
     WeeklyModule,
     AlertsModule,
     OutboxModule,
+    DashboardModule,
   ],
 })
 export class AppModule {}

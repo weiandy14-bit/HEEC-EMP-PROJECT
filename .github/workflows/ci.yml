@@ -47,8 +47,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # build 先行：產生 scheduler dist，供 api typecheck/build 與 smoke 執行期解析
-      - name: Build (scheduler + api)
+      # build 先行：產生 scheduler dist，供 api typecheck/build 與 smoke 執行期解析（含前端 web 建置）
+      - name: Build (scheduler + api + web)
         run: npm run build
 
       - name: Lint
@@ -59,6 +59,9 @@ jobs:
 
       - name: Unit tests (scheduler)
         run: npm test
+
+      - name: Web unit tests (頁 A 甘特 UI 與 UI 狀態)
+        run: npm run test:web
 
       - name: Install PostgreSQL client
         run: |

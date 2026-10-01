@@ -1,0 +1,77 @@
+:root {
+  --bg: #ffffff;
+  --panel: #f6f7f9;
+  --border: #d8dde3;
+  --text: #1b2733;
+  --muted: #5b6673;
+  --accent: #2563eb;
+  --planned: #60a5fa;
+  --baseline: #cbd5e1;
+  --actual: #34d399;
+  --critical: #ef4444;
+  --today: #f59e0b;
+  --name-col: 300px;
+  --row-h: 30px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141a; --panel: #161c24; --border: #2a333f; --text: #e6edf3; --muted: #9aa7b4;
+    --baseline: #3a4654;
+  }
+}
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, "Noto Sans TC", sans-serif; }
+
+/* U7：主框架適配 16:9，頁面不做水平捲動 */
+.app-16x9 {
+  display: flex; flex-direction: column;
+  width: 100%; height: 100vh; max-height: 100vh;
+  aspect-ratio: 16 / 9; margin: 0 auto; overflow: hidden; padding: 0 16px;
+}
+.toolbar { display: flex; align-items: center; gap: 12px; padding: 10px 0; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+.toolbar h1 { font-size: 16px; margin: 0 8px 0 0; }
+.zoom-group button, .toolbar button { border: 1px solid var(--border); background: var(--panel); color: var(--text); padding: 4px 10px; border-radius: 6px; cursor: pointer; }
+.zoom-group button[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+.filter { display: inline-flex; gap: 4px; align-items: center; color: var(--muted); }
+.filter input { width: 90px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); }
+
+/* 甘特：時間軸可水平捲動；名稱欄凍結 */
+.gantt { flex: 1; min-height: 0; display: flex; }
+.gantt-scroll { flex: 1; overflow: auto; position: relative; }
+.gantt-body { position: relative; }
+.row { display: flex; align-items: stretch; height: var(--row-h); border-bottom: 1px solid var(--border); }
+.name-col {
+  position: sticky; left: 0; z-index: 2;
+  width: var(--name-col); min-width: var(--name-col); max-width: var(--name-col);
+  background: var(--panel); border-right: 1px solid var(--border);
+  display: flex; align-items: center; gap: 6px; padding-inline: 12px; overflow: hidden; white-space: nowrap;
+}
+.project-header .name-col { font-weight: 600; }
+.lane { position: relative; flex: 1; }
+.bar { position: absolute; top: 6px; height: calc(var(--row-h) - 14px); border-radius: 3px; }
+.bar-baseline { background: var(--baseline); top: 12px; height: 6px; opacity: .9; }
+.bar-planned { background: var(--planned); }
+.bar-actual { background: var(--actual); height: 6px; top: 4px; }
+.task-row.critical .bar-planned { background: var(--critical); }
+.task-row.critical .name-col { box-shadow: inset 3px 0 0 var(--critical); }
+.today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--today); z-index: 1; }
+.milestone { position: absolute; transform: translateX(-50%); color: var(--accent); font-size: 12px; top: 50%; margin-top: -8px; }
+.milestone.ms-review_due { color: var(--muted); }
+.dep-line { display: none; } /* 占位：相依資料隨任務呈現，連線於畫布層繪製 */
+.health { margin-inline-start: auto; font-size: 11px; padding: 0 6px; border-radius: 10px; background: var(--border); color: var(--text); }
+.task-status { margin-inline-start: 8px; font-size: 11px; color: var(--muted); }
+.wbs { color: var(--muted); font-variant-numeric: tabular-nums; }
+.twisty { border: none; background: transparent; cursor: pointer; color: var(--muted); width: 16px; }
+.twisty-spacer { display: inline-block; width: 16px; }
+
+/* 狀態 */
+.state { padding: 24px; color: var(--muted); }
+.state-error { color: var(--critical); }
+.skeleton-row { height: 18px; margin: 8px 0; border-radius: 4px; background: linear-gradient(90deg, var(--panel), var(--border), var(--panel)); background-size: 200% 100%; animation: sk 1.2s infinite; }
+@keyframes sk { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+.state-partial { color: var(--muted); padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.placeholder { color: var(--muted); font-style: italic; padding-inline-start: 8px; }
+.load-more { padding: 10px; text-align: center; }
+.load-more button { border: 1px solid var(--border); background: var(--panel); color: var(--text); padding: 6px 14px; border-radius: 6px; cursor: pointer; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }

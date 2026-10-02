@@ -24,7 +24,7 @@ export function WeeklyBoardPage() {
   const [selected,setSelected]=useState<WeeklyItem|null>(null);
   const focus=useRef<HTMLElement|null>(null);
   const [pageError,setPageError]=useState(''),[paging,setPaging]=useState(false);
-  useEffect(()=>{let alive=true;void fetchWeeklyOptions().then(r=>{if(alive){if(r.body)setOptions(r.body);else setOptionsError('篩選選單載入失敗');}}).catch(()=>{if(alive)setOptionsError('篩選選單載入失敗');});return()=>{alive=false;};},[]);
+  useEffect(()=>{let alive=true;void fetchWeeklyOptions().then(r=>{if(alive){if(r.body&&Array.isArray(r.body.projects)&&Array.isArray(r.body.owners))setOptions(r.body);else setOptionsError('篩選選單載入失敗');}}).catch(()=>{if(alive)setOptionsError('篩選選單載入失敗');});return()=>{alive=false;};},[]);
   const [data, setData] = useState<WeeklyBoardResponse | null>(null);
   const [phase, setPhase] = useState<'loading' | 'ok' | 'empty' | 'error' | 'forbidden'>('loading');
   const [errMsg, setErrMsg] = useState('');

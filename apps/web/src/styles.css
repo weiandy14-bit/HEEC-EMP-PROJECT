@@ -175,3 +175,4 @@ table.days thead th { background: var(--panel); color: var(--muted); }
 .type-review_step { background:#6d28d9; }
 .type-meeting { background:#0369a1; }
 .project-summary { display:flex; flex-wrap:wrap; gap:8px; max-height:70px; overflow:auto; padding:6px 12px; flex-shrink:0; font-size:12px; }
+.bar-progress { background:#14532d; top:17px; height:3px; }

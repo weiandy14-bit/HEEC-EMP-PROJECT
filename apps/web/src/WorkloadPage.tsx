@@ -25,7 +25,7 @@ export function WorkloadPage() {
   const [options,setOptions]=useState<WorkloadOptions>({projects:[],teams:[],resources:[]});
   const [optionsError,setOptionsError]=useState('');
   const [sort,setSort]=useState('name'),[page,setPage]=useState(0),[unassignedCount,setUnassignedCount]=useState(50);
-  useEffect(()=>{let alive=true;void fetchWorkloadOptions().then(r=>{if(alive){if(r.body)setOptions(r.body);else setOptionsError('篩選選單載入失敗');}}).catch(()=>{if(alive)setOptionsError('篩選選單載入失敗');});return()=>{alive=false;};},[]);
+  useEffect(()=>{let alive=true;void fetchWorkloadOptions().then(r=>{if(alive){if(r.body&&Array.isArray(r.body.projects)&&Array.isArray(r.body.teams)&&Array.isArray(r.body.resources))setOptions(r.body);else setOptionsError('篩選選單載入失敗');}}).catch(()=>{if(alive)setOptionsError('篩選選單載入失敗');});return()=>{alive=false;};},[]);
   const [filters, setFilters] = useState<WorkloadFilters>(loadSaved);
   const [data, setData] = useState<WorkloadResponse | null>(null);
   const [phase, setPhase] = useState<'loading' | 'ok' | 'empty' | 'error' | 'forbidden'>('loading');
@@ -139,7 +139,7 @@ export function WorkloadPage() {
           <tbody>
             {visible.map((r) => (
               <tr key={r.resource_id} data-testid="wl-row" data-resource-id={r.resource_id}>
-                <th className="name-col" scope="row">{r.name}<span className="muted"> ×{r.max_units}</span></th>
+                <th className="name-col" scope="row">{r.name}<span className="muted"> ×{r.max_units}</span>{r.data_missing&&<span>資料缺漏</span>}</th>
                 {r.error?<td colSpan={4} data-testid="partial-placeholder">日曆資料無法計算，請重試<button type="button" onClick={()=>void load()}>重試</button></td>:r.cells.map((c, i) => {
                   const band = loadBand(c);
                   const key = `${r.resource_id}:${i}`;
@@ -158,6 +158,7 @@ export function WorkloadPage() {
                       </button>
                       {open === key && (
                         <div className="sources" data-testid="cell-sources">
+                          {!!r.unplaced_sources?.length&&<p role="status">無法分攤（指派缺日期）：{r.unplaced_sources.map(s=>`${s.project_name} / ${s.task_name} ${hours(s.planned_work_minutes)}`).join('；')}</p>}
                           {c.sources.length === 0 ? <p className="muted">無指派來源</p> : (
                             <ul>
                               {c.sources.map((s, j) => (
@@ -189,7 +190,7 @@ export function WorkloadPage() {
                               </table>
                             );
                           })()}
-                          <div aria-label="每日指派與衝突來源">{detail[r.resource_id]?.cells[i]?.days?.map(d=><div key={d.date}>
+                          <div role="group" aria-label="每日指派與衝突來源">{detail[r.resource_id]?.cells[i]?.days?.map(d=><div key={d.date}>
                            {!!d.sources?.length&&<p>{d.date}：{d.sources.map(s=>`${s.project_name} / ${s.wbs_code} ${s.task_name} ${hours(s.minutes)}`).join('；')}</p>}
                            {d.conflicts?.map((conflict,j)=><p key={j} className="conflict">同時投入衝突：{formatTime(conflict.start)}–{formatTime(conflict.finish)}，投入 {Math.round(conflict.units*100)}% / 容量 {Math.round(conflict.max_units*100)}%</p>)}
                           </div>)}</div>

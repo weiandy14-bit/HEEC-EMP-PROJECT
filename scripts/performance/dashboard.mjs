@@ -86,6 +86,14 @@ try{
  do{const r=await sample(`/dashboard/gantt?project_id=${typical[0].id}&task_limit=1000${cursor?'&task_cursor='+cursor:''}`,1);r.body.projects[0].tasks.forEach(t=>seen.add(t.id));cursor=r.body.projects[0].task_next_cursor;pages++;assert.ok(pages<=6);}while(cursor);
  assert.equal(seen.size,5000);
  const largeBrowser=await browserSamples('large');
+ const resIds=Array.from({length:300},()=>randomUUID());
+ await pool.query(`INSERT INTO resources(id,org_id,code,name,type) SELECT id,$1,'R-'||id::text,'Engineer '||ordinal,'labor' FROM unnest($2::uuid[]) WITH ORDINALITY x(id,ordinal)`,[org,resIds]);
+ await pool.query(`INSERT INTO resource_assignments(org_id,project_id,task_id,resource_id,planned_work_minutes,assignment_units,assignment_start,assignment_finish)
+  SELECT $1,p.id,p.root,($2::uuid[])[1+((row_number() OVER(ORDER BY p.code)-1)%300)::int],480,0.5,'2027-03-08T01:00Z','2027-03-19T10:00Z' FROM jsonb_to_recordset($3::jsonb)p(id uuid,root uuid,code text)`,[org,resIds,JSON.stringify([...typical,...more])]);
+ await pool.query(`INSERT INTO weekly_items(org_id,project_id,type,title,source_key,due_at,owner_id) SELECT $1,id,'general','Benchmark weekly','perf-weekly','2027-03-10T01:00Z',$2 FROM projects WHERE org_id=$1`,[org,user]);
+ const c=await sample('/dashboard/workload?from_week=2027-W10');assert.equal(c.body.resources.length,300);
+ const b=await sample('/dashboard/weekly?week=2027-W10&limit=50');assert.equal(b.body.items.length,50);assert.ok(b.body.next_offset);
+ report.other_dashboards={workload_300_engineers:{...c,body:undefined},weekly_500_projects:{...b,body:undefined}};
  report.datasets.push({label:'large',projects:500,tasks_per_project:5000,total_tasks:2500000,read_scope:'50 projects x 200 candidates + ancestors + touching dependencies',api:{...large,body:undefined},browser:largeBrowser,query_count:await plans('large'),single_project_paging:{tasks_seen:seen.size,pages}});
  assert.equal((await pool.query(`SELECT count(*)::int AS n FROM project_tasks WHERE org_id=$1`,[org])).rows[0].n,2500000);
  await writeFile(`${out}/report.json`,JSON.stringify(report,null,2));

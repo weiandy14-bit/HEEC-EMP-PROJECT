@@ -142,7 +142,7 @@ export function GanttPage() {
     <Shell options={options} optionsError={optionsError} filters={filters} onZoom={setZoom} onFilter={update}>
       {failed.length > 0 && <PartialBanner failedCount={failed.length} />}
       <div className="gantt" data-testid="gantt" data-zoom={filters.zoom}>
-        <div className="gantt-scroll" data-testid="timeline-scroll" ref={scrollRef} tabIndex={0} aria-label="甘特時間軸，使用上下鍵與 Page Down 捲動"
+        <div className="gantt-scroll" data-testid="timeline-scroll" ref={scrollRef} tabIndex={0} role="region" aria-label="甘特時間軸，使用上下鍵與 Page Down 捲動"
           onScroll={(e)=>setViewport({top:e.currentTarget.scrollTop,height:e.currentTarget.clientHeight || 600})}>
           <div className="gantt-body" style={{ minWidth: timelineWidth }}>
             <div className="row timeline-header" data-testid="timeline-header">
@@ -164,7 +164,7 @@ export function GanttPage() {
         </div>
       </div>
       <div className="gantt-paging" aria-live="polite">已載入 {projects.length} 案、{projects.reduce((sum,p)=>sum+p.tasks.length,0)} 項工作；僅渲染目前可見範圍。</div>
-      <div className="gantt-paging" aria-label="尚未載入的工作">
+      <div className="gantt-paging" role="group" aria-label="尚未載入的工作">
         {projects.filter((p)=>p.task_next_cursor).map((p)=><button type="button" disabled={paging} key={p.id} onClick={()=>void loadTasks(p)}>
           載入 {p.code} 更多工作（尚餘 {p.task_count_remaining ?? '—'} 筆候選）
         </button>)}
@@ -260,11 +260,12 @@ function ProjectRows({ layout, start, end, collapsed, onToggle, pct, onTask }: {
                 </button>
               ) : <span className="twisty-spacer" />}
               <span className="wbs">{task.wbs_code}</span> <button className="task-link" type="button" onClick={(e) => onTask(task.id, e.currentTarget)}>{task.name}</button>
-              <span className="task-status" data-testid="task-status">{statusLabel(task.status)}{!task.actual.finish && task.percent_complete<100 && task.planned.finish && Date.parse(task.planned.finish)<Date.now()?' · 逾期':''}{task.critical?' · 關鍵':''}</span>
+              <span className="task-status" data-testid="task-status">{statusLabel(task.status)} · {task.percent_complete}%{!task.actual.finish && task.percent_complete<100 && task.planned.finish && Date.parse(task.planned.finish)<Date.now()?' · 逾期':''}{task.critical?' · 關鍵':''}</span>
             </div>
             <div className="lane">
               <Bar kind="baseline" bar={task.baseline} pct={pct} />
               <Bar kind="planned" bar={task.planned} pct={pct} />
+              {task.percent_complete>0&&<Bar kind="progress" bar={task.planned} pct={pct} completion={task.percent_complete}/> }
               <Bar kind="actual" bar={task.actual} pct={pct} />
             </div>
           </div>
@@ -298,14 +299,14 @@ function ProjectRows({ layout, start, end, collapsed, onToggle, pct, onTask }: {
   );
 }
 
-function Bar({ kind, bar, pct }: { kind: string; bar: { start: string | null; finish: string | null }; pct: (t: number | null) => number | null }) {
+function Bar({ kind, bar, pct,completion }: { completion?:number; kind: string; bar: { start: string | null; finish: string | null }; pct: (t: number | null) => number | null }) {
   const l = pct(bar.start ? Date.parse(bar.start) : null);
   const r = pct(bar.finish ? Date.parse(bar.finish) : null);
   if (l == null || r == null) return null;
   if (r < 0 || l > 100) return null;
   const left = Math.max(0, l);
   const width = Math.min(100 - left, Math.max(0.5, Math.min(100, r) - left));
-  return <div className={`bar bar-${kind}`} data-testid={`bar-${kind}`} data-kind={kind} style={{ left: `${left}%`, width: `${width}%` }} />;
+  return <div className={`bar bar-${kind}`} data-testid={`bar-${kind}`} data-kind={kind} style={{ left: `${left}%`, width: `${completion==null?width:width*completion/100}%` }} />;
 }
 
 function statusLabel(s: string): string {

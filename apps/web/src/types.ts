@@ -121,6 +121,7 @@ export interface WorkloadCell {
 
 export interface WorkloadResource {
   error?:boolean; data_missing?:boolean;
+  unplaced_sources?:{assignment_id:string;project_name:string;task_name:string;planned_work_minutes:number}[];
   resource_id: string;
   name: string;
   max_units: number;

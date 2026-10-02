@@ -259,3 +259,24 @@ test('P4-C no-working-calendar retains demand, signals missing data and independ
  await db().query(`INSERT INTO calendar_working_days(org_id,calendar_id,weekday,local_start,local_end) VALUES($1,$2,1,'09:00','17:00')`,[ORG,cal]);
  cell=(await matrix(`&resource_id=${res}`)).resources[0].cells[0];assert.equal(cell.capacity_minutes,480);
 });
+
+test('P4-C personal leave calendar inherits base work windows and incomplete assignments remain visible',async()=>{
+ const p=await createProject(),t=await makeTask(p),res=await makeResource(),cal=randomUUID();
+ const base=(await db().query(`SELECT id FROM calendars WHERE org_id=$1 AND name <> 'Empty calendar' ORDER BY created_at LIMIT 1`,[ORG])).rows[0].id;
+ await db().query(`INSERT INTO calendars(id,org_id,name,parent_calendar_id) VALUES($1,$2,'Personal leave',$3)`,[cal,ORG,base]);
+ await db().query(`INSERT INTO calendar_exceptions(org_id,calendar_id,local_date,available_minutes) VALUES($1,$2,'2027-03-08',0)`,[ORG,cal]);
+ await db().query(`INSERT INTO resource_calendars(org_id,resource_id,calendar_id,priority) VALUES($1,$2,$3,50)`,[ORG,res,cal]);
+ await assign(p,t,res,{work:480,start:iso(monMorning(W0)),finish:iso(friEvening(W0))});
+ let r=(await matrix(`&resource_id=${res}`)).resources[0];assert.equal(r.cells[0].capacity_minutes,1920);assert.ok(r.cells[0].flags.includes('on_leave'));
+ const t2=await makeTask(p,{wbs_code:'2'});await db().query(`INSERT INTO resource_assignments(org_id,project_id,task_id,resource_id,planned_work_minutes) VALUES($1,$2,$3,$4,60)`,[ORG,p,t2,res]);
+ r=(await matrix(`&resource_id=${res}`)).resources[0];assert.ok(r.data_missing);assert.equal(r.unplaced_sources.length,1);assert.ok(r.cells[0].flags.includes('data_missing'));
+});
+
+test('P4-U5 malformed calendar isolates one resource while healthy resources stay readable',async()=>{
+ const res=await makeResource(),a=randomUUID(),b=randomUUID();
+ await db().query(`INSERT INTO calendars(id,org_id,name) VALUES($1,$2,'Cycle A')`,[a,ORG]);
+ await db().query(`INSERT INTO calendars(id,org_id,name,parent_calendar_id) VALUES($1,$2,'Cycle B',$3)`,[b,ORG,a]);
+ await db().query(`UPDATE calendars SET parent_calendar_id=$2 WHERE id=$1`,[a,b]);
+ await db().query(`INSERT INTO resource_calendars(org_id,resource_id,calendar_id,priority) VALUES($1,$2,$3,100)`,[ORG,res,a]);
+ const good=await makeResource();const data=await matrix();assert.ok(data.resources.find(r=>r.resource_id===res).error);assert.ok(!data.resources.find(r=>r.resource_id===good).error);assert.ok(data.partial_errors.some(e=>e.resource_id===res));
+});

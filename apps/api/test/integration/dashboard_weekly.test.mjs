@@ -140,3 +140,16 @@ test('P4-B paging has stable ordering, no duplicate IDs and named options',async
  assert.equal(seen.size,121);
  const opts=await api('GET','/dashboard/weekly/options');assert.ok(opts.body.projects.some(v=>v.id===p));assert.ok(opts.body.owners.some(v=>v.id===PM_USER));
 });
+
+test('P4-U5 real DB source failure returns placeholders and preserves healthy source rows',async()=>{
+ await import('reflect-metadata');
+ const {createRequire}=await import('node:module'),require=createRequire(import.meta.url);
+ const {WeeklyBoardService}=require('../../dist/dashboard/weekly.service.js');
+ const p=await createProject(),m=await makeMeeting(p,inWeek);
+ const service=new WeeklyBoardService({query:async(sql,params)=>{
+  if(sql.includes('FROM deliverables d JOIN projects'))return (await db().query('SELECT * FROM phase4_intentionally_missing_relation')).rows;
+  return (await db().query(sql,params)).rows;
+ }});
+ const board=await service.board({orgId:ORG,userId:PM_USER,roles:['PM']},{week:WK,project_id:p});
+ assert.equal(board.partial_errors.length,1);assert.equal(board.partial_errors[0].kind,'deliverable');assert.ok(board.items.some(i=>i.id===m));
+});

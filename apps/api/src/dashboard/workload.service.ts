@@ -3,7 +3,7 @@ import { workingMinutesBetween, workingIntervalsBetween, type Calendar } from '@
 import { DatabaseService } from '../database/database.service';
 import { AuditService } from '../audit/audit.service';
 import { DomainError } from '../common/errors';
-import { buildCalendar, type CalendarRows } from '../schedule/mapper';
+import { buildCalendar } from '../schedule/mapper';
 import type { UserContext } from '../auth/request-context';
 import type { WorkloadQueryDto } from './dto';
 import { isoWeekStart } from './week';
@@ -71,21 +71,30 @@ export class WorkloadService {
     return '\ufeff' + rows.map((r) => r.map(quote).join(',')).join('\r\n') + '\r\n';
   }
 
-  private async loadCalendar(calendarId: string): Promise<Calendar | null> {
-    const [metas,workingDays,exceptions] = await Promise.all([
-      this.db.query<any>(`SELECT id,timezone FROM calendars WHERE id=$1`,[calendarId]),
-      this.db.query<CalendarRows['workingDays'][number]>(`SELECT weekday,local_start,local_end FROM calendar_working_days WHERE calendar_id=$1`,[calendarId]),
-      this.db.query<CalendarRows['exceptions'][number]>(`SELECT local_date,local_start,local_end,available_minutes FROM calendar_exceptions WHERE calendar_id=$1`,[calendarId])]);
-    return metas[0] ? buildCalendar({calendar:metas[0],workingDays,exceptions}) : null;
-  }
-
-  /** 決定資源之日曆：resource_calendars 優先序最高，否則組織預設 active 日曆。 */
-  private async resolveCalendarId(orgId: string, resourceId: string, fallback: string | null): Promise<string | null> {
-    const rc = await this.db.queryOne<{ calendar_id: string }>(
-      `SELECT calendar_id FROM resource_calendars
-        WHERE org_id = $1 AND resource_id = $2 AND archived_at IS NULL
-        ORDER BY priority DESC NULLS LAST LIMIT 1`, [orgId, resourceId]);
-    return rc?.calendar_id ?? fallback;
+  private async requestCalendars(ctx:UserContext,ids:string[],fallback:string|null){
+    const [links,metas,working,exceptions]=await Promise.all([
+      this.db.query<any>(`SELECT resource_id,calendar_id,priority FROM resource_calendars WHERE org_id=$1 AND resource_id=ANY($2::uuid[]) AND archived_at IS NULL ORDER BY resource_id,priority ASC NULLS LAST,calendar_id`,[ctx.orgId,ids]),
+      this.db.query<any>(`SELECT id,timezone,parent_calendar_id FROM calendars WHERE org_id=$1 AND archived_at IS NULL`,[ctx.orgId]),
+      this.db.query<any>(`SELECT w.* FROM calendar_working_days w JOIN calendars c ON c.id=w.calendar_id WHERE c.org_id=$1 AND w.archived_at IS NULL`,[ctx.orgId]),
+      this.db.query<any>(`SELECT e.* FROM calendar_exceptions e JOIN calendars c ON c.id=e.calendar_id WHERE c.org_id=$1 AND e.archived_at IS NULL`,[ctx.orgId])]);
+    const resolved=new Map<string,Calendar>();
+    const merge=(base:Calendar|null,child:Calendar):Calendar=>({...child,weekly:child.weekly.length?child.weekly:base?.weekly??[],exceptions:[...new Map([...(base?.exceptions??[]),...(child.exceptions??[])].map(e=>[e.localDate,e])).values()]});
+    const build=(id:string,path=new Set<string>()):Calendar=>{
+      if(resolved.has(id))return resolved.get(id)!;
+      if(path.has(id))throw new Error('calendar inheritance cycle');
+      const meta=metas.find(m=>m.id===id);if(!meta)throw new Error('calendar unavailable');
+      const next=new Set(path);next.add(id);
+      const base=meta.parent_calendar_id?build(meta.parent_calendar_id,next):null;
+      const own=buildCalendar({calendar:meta,workingDays:working.filter(w=>w.calendar_id===id),exceptions:exceptions.filter(e=>e.calendar_id===id)});
+      const cal=merge(base,own);resolved.set(id,cal);return cal;
+    };
+    const result=new Map<string,{cal:Calendar|null;error:boolean}>();
+    for(const id of ids)try{
+      let cal=fallback?build(fallback):null;
+      for(const link of links.filter(l=>l.resource_id===id))cal=build(link.calendar_id);
+      result.set(id,{cal,error:false});
+    }catch(error){console.error('dashboard.calendar.invalid',{resource_id:id,error});result.set(id,{cal:null,error:true});}
+    return result;
   }
 
   private weeks(q: WorkloadQueryDto): { label: string; startMs: number; endMs: number }[] {
@@ -132,8 +141,7 @@ export class WorkloadService {
              JOIN project_tasks t ON t.org_id=a.org_id AND t.project_id=a.project_id AND t.id=a.task_id AND t.archived_at IS NULL
             WHERE p.archived_at IS NULL AND ${PROJECT_VISIBILITY} AND a.org_id = $1 AND a.resource_id = ANY($2) AND a.archived_at IS NULL
               AND ($7::uuid IS NULL OR a.project_id=$7) AND a.booking_type IN ('committed','cover')
-              AND a.assignment_start IS NOT NULL AND a.assignment_finish IS NOT NULL
-              AND a.assignment_start < $4 AND a.assignment_finish > $3`,
+              AND (a.assignment_start IS NULL OR a.assignment_finish IS NULL OR (a.assignment_start < $4 AND a.assignment_finish > $3))`,
           [ctx.orgId, ids, new Date(rangeStart).toISOString(), new Date(rangeEnd).toISOString(), ctx.roles.includes('Admin'), ctx.userId, q.project_id ?? null])
       : [];
     const byResource = new Map<string, Assignment[]>();
@@ -142,22 +150,14 @@ export class WorkloadService {
       byResource.get(a.resource_id)!.push(a);
     }
 
-    // Six calendar queries at most, independent of resource count; maps live only inside this request.
-    const [links,metas,working,exceptions] = await Promise.all([
-      this.db.query<any>(`SELECT DISTINCT ON(resource_id) resource_id,calendar_id FROM resource_calendars WHERE org_id=$1 AND resource_id=ANY($2::uuid[]) AND archived_at IS NULL ORDER BY resource_id,priority DESC NULLS LAST,calendar_id`,[ctx.orgId,ids]),
-      this.db.query<any>(`SELECT id,timezone FROM calendars WHERE org_id=$1 AND archived_at IS NULL`,[ctx.orgId]),
-      this.db.query<any>(`SELECT w.* FROM calendar_working_days w JOIN calendars c ON c.id=w.calendar_id WHERE c.org_id=$1 AND w.archived_at IS NULL`,[ctx.orgId]),
-      this.db.query<any>(`SELECT e.* FROM calendar_exceptions e JOIN calendars c ON c.id=e.calendar_id WHERE c.org_id=$1 AND e.archived_at IS NULL`,[ctx.orgId]),
-    ]);
-    const calendars = new Map<string,Calendar>(), broken = new Set<string>();
-    for(const meta of metas)try {calendars.set(meta.id,buildCalendar({calendar:meta,workingDays:working.filter(w=>w.calendar_id===meta.id),exceptions:exceptions.filter(e=>e.calendar_id===meta.id)}));}catch(error){console.error('dashboard.calendar.invalid',{id:meta.id,error});broken.add(meta.id);}
-    const linksByResource=new Map(links.map(r=>[r.resource_id,r.calendar_id]));
+    const resourceCalendars=await this.requestCalendars(ctx,ids,fallbackCal);
     const outResources = resources.map(r=>{
-      const calId=linksByResource.get(r.id)??fallbackCal;
-      const cal=calId?calendars.get(calId)??null:null;
+      const calendar=resourceCalendars.get(r.id)!;
+      const cal=calendar.cal;
       const maxUnits=Number(r.max_units),mine=byResource.get(r.id)??[];
       return {resource_id:r.id,name:r.name,max_units:maxUnits,team_id:r.team_id,
-        error:!!calId && broken.has(calId),data_missing:!cal,
+        error:calendar.error,data_missing:!cal || mine.some(a=>!a.assignment_start||!a.assignment_finish),
+        unplaced_sources:mine.filter(a=>!a.assignment_start||!a.assignment_finish).map(a=>({assignment_id:a.id,project_name:a.project_name,task_name:a.task_name,planned_work_minutes:a.planned_work_minutes})),
         cells:weeks.map(w=>this.cell(w,mine,cal,maxUnits,r))};
     });
 
@@ -223,14 +223,14 @@ export class WorkloadService {
     const wStart = toMin(w.startMs), wEnd = toMin(w.endMs);
     // 容量 = 工作分鐘 × Max Units；在職區間外或無日曆 → 0
     let capacity = 0;
-    const active = this.activeInWeek(resource, w);
-    if (cal && active) capacity = this.capacity(wStart,wEnd,cal,maxUnits,resource);
+    if (cal) capacity = this.capacity(wStart,wEnd,cal,maxUnits,resource);
 
     // 需求：Work 依工作時間比例攤配到本週（部分投入 units 不乘入 Work）
     let demand = 0;
     const sources: any[] = [];
     const overlaps: { s: number; e: number; units: number }[] = [];
     for (const a of assignments) {
+      if(!a.assignment_start||!a.assignment_finish)continue;
       const aS = toMin(Date.parse(a.assignment_start!));
       const aE = toMin(Date.parse(a.assignment_finish!));
       const oS = Math.max(wStart, aS), oE = Math.min(wEnd, aE);
@@ -248,7 +248,7 @@ export class WorkloadService {
     demand = Math.round(demand);
 
     const flags: Flag[] = [];
-    if(!cal || assignments.some(a=>!this.validContour(a))) flags.push('data_missing');
+    if(!cal || assignments.some(a=>!this.validContour(a)||!a.assignment_start||!a.assignment_finish)) flags.push('data_missing');
     const conflicts=this.conflicts(overlaps,cal,maxUnits);
     const loadRate = capacity > 0 ? demand / capacity : null;
     if (capacity === 0) { flags.push('zero_capacity'); if (demand > 0) flags.push('over_allocated'); }
@@ -340,8 +340,7 @@ export class WorkloadService {
     const weeks = this.weeks(q);
     const fallback = await this.db.queryOne<{ id: string }>(
       `SELECT id FROM calendars WHERE org_id = $1 AND status = 'active' ORDER BY created_at LIMIT 1`, [ctx.orgId]);
-    const calId = await this.resolveCalendarId(ctx.orgId, r.id, fallback?.id ?? null);
-    const cal = calId ? await this.loadCalendar(calId) : null;
+    const cal=(await this.requestCalendars(ctx,[r.id],fallback?.id??null)).get(r.id)?.cal??null;
     const maxUnits = Number(r.max_units);
     const assignments = await this.db.query<Assignment>(
       `SELECT a.id, a.project_id, a.task_id, a.resource_id, a.assignment_units,
@@ -371,11 +370,11 @@ export class WorkloadService {
     for (let d = 0; d < 7; d++) {
       const dStartMs = w.startMs + d * DAY_MS, dEndMs = dStartMs + DAY_MS;
       const dStart = toMin(dStartMs), dEnd = toMin(dEndMs);
-      const active = this.activeInWeek(resource, { startMs: dStartMs, endMs: dEndMs });
-      const capacity = cal && active ? this.capacity(dStart,dEnd,cal,maxUnits,resource) : 0;
+      const capacity = cal ? this.capacity(dStart,dEnd,cal,maxUnits,resource) : 0;
       let demand = 0;
       const overlaps: { s: number; e: number; units: number }[] = [];
       for (const a of assignments) {
+        if(!a.assignment_start||!a.assignment_finish)continue;
         const aS = toMin(Date.parse(a.assignment_start!)), aE = toMin(Date.parse(a.assignment_finish!));
         const oS = Math.max(dStart, aS), oE = Math.min(dEnd, aE);
         if (oE <= oS) continue;

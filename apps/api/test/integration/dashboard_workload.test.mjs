@@ -192,8 +192,8 @@ test('P4-C drill-down 每日明細：週內逐日容量/需求', async () => {
 test('P4-C same-org project scope: matrix, detail, unassigned and team summaries exclude hidden projects', async () => {
   const allowed = await createProject(), hidden = await createProject();
   const otherUser = randomUUID();
-  await db().query(`INSERT INTO users (id, org_id, email, display_name, issuer, subject) VALUES ($1,$2,$3,'Other PM','dev',$1::text)`,
-    [otherUser, ORG, `${otherUser}@example.test`]);
+  await db().query(`INSERT INTO users (id, org_id, email, display_name, issuer, subject) VALUES ($1,$2,$3,'Other PM','dev',$4)`,
+    [otherUser, ORG, `${otherUser}@example.test`, otherUser]);
   await db().query(`UPDATE projects SET created_by=$2, pm_user_id=$2, status='active' WHERE id=$1`, [hidden, otherUser]);
   await db().query(`DELETE FROM project_members WHERE project_id=$1 AND user_id=$2`, [hidden, PM_USER]);
   const res = await makeResource();

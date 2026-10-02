@@ -27,17 +27,25 @@ export function WorkloadPage() {
   const [phase, setPhase] = useState<'loading' | 'ok' | 'empty' | 'error' | 'forbidden'>('loading');
   const [errMsg, setErrMsg] = useState('');
   const [open, setOpen] = useState<string | null>(null); // 展開中的 cell key
+  const [detailErrors, setDetailErrors] = useState<Record<string, string>>({});
   const [detail, setDetail] = useState<Record<string, WorkloadResource>>({});
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
   const reqId = useRef(0);
 
-  const toggleCell = (resourceId: string, key: string) => {
-    if (open === key) { setOpen(null); return; }
+  const toggleCell = (resourceId: string, key: string, retry = false) => {
+    if (open === key && !retry) { setOpen(null); return; }
     setOpen(key);
     if (!detail[resourceId]) {
+      const version = reqId.current;
+      setDetailErrors((prev) => ({ ...prev, [resourceId]: '' }));
       void fetchWorkloadResource(resourceId, { from_week: filters.from_week }).then((r) => {
+        if (version !== reqId.current) return;
         if (r.status === 200 && r.body) setDetail((prev) => ({ ...prev, [resourceId]: r.body! }));
+        else setDetailErrors((prev) => ({ ...prev, [resourceId]: `每日明細載入失敗 HTTP ${r.status}` }));
+      }).catch((e: unknown) => {
+        if (version !== reqId.current) return;
+        setDetailErrors((prev) => ({ ...prev, [resourceId]: e instanceof Error ? e.message : '每日明細載入失敗' }));
       });
     }
   };
@@ -46,6 +54,8 @@ export function WorkloadPage() {
     const my = ++reqId.current;
     setPhase('loading');
     setDetail({});
+    setDetailErrors({});
+    setOpen(null);
     try {
       const r = await fetchWorkload({ ...filters, weeks: 4 });
       if (my !== reqId.current) return;
@@ -142,6 +152,10 @@ export function WorkloadPage() {
                           )}
                           {(() => {
                             const days = detail[r.resource_id]?.cells[i]?.days;
+                            if (detailErrors[r.resource_id]) return <div role="alert">
+                              {detailErrors[r.resource_id]}
+                              <button type="button" onClick={() => toggleCell(r.resource_id, key, true)}>重試每日明細</button>
+                            </div>;
                             if (!days) return <p className="muted" data-testid="days-loading">每日明細載入中…</p>;
                             return (
                               <table className="days" data-testid="cell-days">

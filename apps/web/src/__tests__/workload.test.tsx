@@ -114,6 +114,20 @@ describe('P4-C 工程師負荷 UI', () => {
     expect(fetchWorkloadResource).toHaveBeenCalledWith(r.resource_id, expect.any(Object));
   });
 
+  it('daily detail error offers retry while weekly data remains visible', async () => {
+    const r = resource();
+    fetchWorkload.mockReturnValue(ok(resp({ resources: [r] })));
+    fetchWorkloadResource.mockRejectedValueOnce(new Error('connection failed'));
+    render(<WorkloadPage />);
+    await screen.findByTestId('workload');
+    fireEvent.click(screen.getByTestId(`cell-${r.resource_id}:0`));
+    expect(await screen.findByRole('alert')).toHaveTextContent('connection failed');
+    expect(screen.getByTestId('workload')).toBeInTheDocument();
+    fetchWorkloadResource.mockResolvedValueOnce({ status: 200, body: { ...r, cells: r.cells.map((c) => ({ ...c, days: [] })) } });
+    fireEvent.click(screen.getByRole('button', { name: '重試每日明細' }));
+    expect(await screen.findByTestId('cell-days')).toBeInTheDocument();
+  });
+
   it('C6 export uses active filters and reports failures', async () => {
     fetchWorkload.mockReturnValue(ok(resp()));
     downloadWorkload.mockRejectedValueOnce(new Error('匯出失敗 HTTP 403'));

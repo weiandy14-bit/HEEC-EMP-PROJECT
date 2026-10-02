@@ -37,27 +37,27 @@ export class WeeklyBoardService {
   const common=(alias:string)=>`${alias}.org_id=$1 AND ${alias}.archived_at IS NULL`;
   const jobs=[
    {kind:'deliverable',query:`SELECT d.id,d.project_id,p.name AS project_name,d.name AS title,d.approver_id AS assignee_id,u.display_name AS assignee_name,d.due_at,d.status,'交圖' AS type,
-    (d.due_at<$3 AND d.status NOT IN ('accepted','locked')) AS overdue FROM deliverables d JOIN projects p ON p.id=d.project_id LEFT JOIN users u ON u.id=d.approver_id
+    (d.due_at<$8 AND d.status NOT IN ('accepted','locked')) AS overdue FROM deliverables d JOIN projects p ON p.id=d.project_id LEFT JOIN users u ON u.id=d.approver_id
     WHERE ${common('d')} AND d.project_id=ANY($2::uuid[]) AND ($5::uuid IS NULL OR d.approver_id=$5) AND ((d.due_at>=$3 AND d.due_at<$4) OR (d.due_at<$3 AND d.status NOT IN ('accepted','locked')))`},
    {kind:'review_step',query:`SELECT s.id,r.project_id,p.name AS project_name,s.step_code AS title,s.owner_id AS assignee_id,u.display_name AS assignee_name,COALESCE(s.due_at,s.planned_at) AS due_at,s.status,
-    CASE WHEN s.status='revision' THEN '補正' ELSE '送審' END AS type,(COALESCE(s.due_at,s.planned_at)<$3 AND s.status NOT IN ('passed','failed')) AS overdue
+    CASE WHEN s.status='revision' THEN '補正' ELSE '送審' END AS type,(COALESCE(s.due_at,s.planned_at)<$8 AND s.status NOT IN ('passed','failed')) AS overdue
     FROM project_statutory_review_steps s JOIN project_statutory_reviews r ON r.id=s.review_id JOIN projects p ON p.id=r.project_id LEFT JOIN users u ON u.id=s.owner_id
     WHERE ${common('s')} AND r.archived_at IS NULL AND r.project_id=ANY($2::uuid[]) AND ($5::uuid IS NULL OR s.owner_id=$5)
     AND ((COALESCE(s.due_at,s.planned_at)>=$3 AND COALESCE(s.due_at,s.planned_at)<$4) OR (COALESCE(s.due_at,s.planned_at)<$3 AND s.status NOT IN ('passed','failed')))`},
    {kind:'meeting',query:`SELECT m.id,m.project_id,p.name AS project_name,m.topic AS title,m.organizer_id AS assignee_id,u.display_name AS assignee_name,m.starts_at AS due_at,m.status,'會議' AS type,
-    (m.starts_at<$3 AND m.status='scheduled') AS overdue FROM meetings m JOIN projects p ON p.id=m.project_id LEFT JOIN users u ON u.id=m.organizer_id
+    (m.starts_at<$8 AND m.status='scheduled') AS overdue FROM meetings m JOIN projects p ON p.id=m.project_id LEFT JOIN users u ON u.id=m.organizer_id
     WHERE ${common('m')} AND m.project_id=ANY($2::uuid[]) AND ($5::uuid IS NULL OR m.organizer_id=$5) AND ((m.starts_at>=$3 AND m.starts_at<$4) OR (m.starts_at<$3 AND m.status='scheduled'))`},
    {kind:'weekly_item',query:`SELECT w.id,w.project_id,p.name AS project_name,w.title,w.owner_id AS assignee_id,u.display_name AS assignee_name,w.due_at,w.period_start,w.period_end,w.status,CASE w.type WHEN 'general' THEN '工作' WHEN 'milestone' THEN '里程碑' WHEN 'internal_review' THEN '內部審查' WHEN 'coordination' THEN '協調' ELSE w.type END AS type,
-    (COALESCE(w.period_end,w.due_at)<$3 AND w.status<>'done') AS overdue FROM weekly_items w JOIN projects p ON p.id=w.project_id LEFT JOIN users u ON u.id=w.owner_id
+    (COALESCE(w.period_end,w.due_at)<$8 AND w.status<>'done') AS overdue FROM weekly_items w JOIN projects p ON p.id=w.project_id LEFT JOIN users u ON u.id=w.owner_id
     WHERE ${common('w')} AND w.project_id=ANY($2::uuid[]) AND ($5::uuid IS NULL OR w.owner_id=$5) AND w.meeting_id IS NULL AND w.review_step_id IS NULL
     AND NOT EXISTS(SELECT 1 FROM deliverables d WHERE d.project_id=w.project_id AND w.source_key='deliverable:'||d.id::text AND d.archived_at IS NULL)
     AND ((COALESCE(w.period_start,w.due_at)<$4 AND COALESCE(w.period_end,w.due_at)>=$3) OR (COALESCE(w.period_end,w.due_at)<$3 AND w.status<>'done'))`},
    {kind:'task',query:`SELECT t.id,t.project_id,p.name AS project_name,t.name AS title,t.owner_user_id AS assignee_id,u.display_name AS assignee_name,t.planned_finish AS due_at,t.status,'里程碑' AS type,
-     (t.planned_finish<$3 AND t.actual_finish IS NULL AND t.percent_complete<100) AS overdue FROM project_tasks t JOIN projects p ON p.id=t.project_id LEFT JOIN users u ON u.id=t.owner_user_id
+     (t.planned_finish<$8 AND t.actual_finish IS NULL AND t.percent_complete<100) AS overdue FROM project_tasks t JOIN projects p ON p.id=t.project_id LEFT JOIN users u ON u.id=t.owner_user_id
      WHERE ${common('t')} AND t.project_id=ANY($2::uuid[]) AND t.milestone=true AND ($5::uuid IS NULL OR t.owner_user_id=$5)
       AND ((t.planned_finish>=$3 AND t.planned_finish<$4) OR (t.planned_finish<$3 AND t.actual_finish IS NULL AND t.percent_complete<100))`},
   ];
-  const results=await Promise.allSettled(jobs.map(j=>this.db.query<any>(`SELECT * FROM (${j.query}) src WHERE ($7::text IS NULL OR type=$7) ORDER BY overdue DESC,due_at NULLS LAST,id LIMIT $6`,[...params,q.type??null])));
+  const results=await Promise.allSettled(jobs.map(j=>this.db.query<any>(`SELECT * FROM (${j.query}) src WHERE ($7::text IS NULL OR type=$7) ORDER BY overdue DESC,due_at NULLS LAST,id LIMIT $6`,[...params,q.type??null,new Date(Math.max(Date.parse(start),Date.now())).toISOString()])));
   const items:any[]=[], partial_errors:{kind:string;message:string}[]=[];
   results.forEach((result,i)=>{
    if(result.status==='rejected'){console.error('dashboard.weekly.source_failed',{kind:jobs[i].kind,error:result.reason});partial_errors.push({kind:jobs[i].kind,message:'來源暫時無法載入，請重試'});}

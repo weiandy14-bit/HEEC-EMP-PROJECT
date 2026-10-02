@@ -135,3 +135,13 @@ export async function fetchUnassigned(q:WorkloadFilters,offset:number){
  if(!r.ok)throw new Error(`未指派工作載入失敗 HTTP ${r.status}`);
  return await r.json() as {items:import('./types').WorkloadUnassigned[]};
 }
+
+export async function fetchSavedGanttView(){
+ const r=await fetch('/api/v1/dashboard/gantt/view',{headers:devHeaders()});
+ if(!r.ok)throw new Error(`檢視載入失敗 HTTP ${r.status}`);
+ return await r.json() as {view:GanttFilters|null};
+}
+export async function saveGanttView(view:GanttFilters){
+ const r=await fetch('/api/v1/dashboard/gantt/view',{method:'PUT',headers:{...devHeaders(),'Content-Type':'application/json'},body:JSON.stringify(view)});
+ if(!r.ok)throw new Error(`儲存檢視失敗 HTTP ${r.status}`);
+}

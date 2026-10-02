@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchGantt, fetchGanttOptions } from './api';
+import { fetchGantt, fetchGanttOptions,fetchSavedGanttView,saveGanttView } from './api';
 import type { GanttProject, GanttFilters, GanttOptions, Zoom } from './types';
 import { LoadingState, EmptyState, ErrorState, NoPermissionState, PartialBanner } from './components/States';
 
-const VIEW_KEY = 'gantt.view.v1';
+const VIEW_KEY = `gantt.view.v2:${import.meta.env.VITE_DEV_ORG??'session'}:${import.meta.env.VITE_DEV_USER??'session'}`;
 const DEFAULT_FILTERS: GanttFilters = { zoom: 'week' };
 import { timelineDomain, timelineTicks } from './timeline';
 import { layoutProjects, virtualWindow, ROW_HEIGHT, type ProjectLayout } from './gantt-layout';
@@ -46,6 +46,9 @@ export function GanttPage() {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const reqId = useRef(0);
   const [options, setOptions] = useState<GanttOptions>({ projects: [], pms: [], resources: [], disciplines: [] });
+  const touched=useRef(false);
+  const [viewMessage,setViewMessage]=useState('');
+  useEffect(()=>{let alive=true;void fetchSavedGanttView().then(r=>{if(alive&&!touched.current&&r.view&&['day','week','month'].includes(r.view.zoom))setFilters(r.view);}).catch(()=>{if(alive)setViewMessage('伺服器檢視暫時無法載入，保留本機檢視');});return()=>{alive=false;};},[]);
   const [optionsError, setOptionsError] = useState('');
   const [pagingError, setPagingError] = useState('');
   const [paging, setPaging] = useState(false);
@@ -90,7 +93,7 @@ export function GanttPage() {
 
   const setZoom = (zoom: Zoom) => update({ ...filters, zoom });
   const update = (f: GanttFilters) => {
-    setFilters(f);
+    touched.current=true;setFilters(f);
     try { localStorage.setItem(VIEW_KEY, JSON.stringify(f)); } catch { /* ignore */ }
   };
   const toggle = (id: string) =>
@@ -140,6 +143,7 @@ export function GanttPage() {
 
   return (
     <Shell options={options} optionsError={optionsError} filters={filters} onZoom={setZoom} onFilter={update}>
+      <div className="saved-view" role="group" aria-label="個人檢視"><button type="button" onClick={()=>{void saveGanttView(filters).then(()=>setViewMessage('個人檢視已儲存')).catch(e=>setViewMessage(e.message));}}>儲存個人檢視</button><span role="status">{viewMessage}</span></div>
       {failed.length > 0 && <PartialBanner failedCount={failed.length} />}
       <div className="gantt" data-testid="gantt" data-zoom={filters.zoom}>
         <div className="gantt-scroll" data-testid="timeline-scroll" ref={scrollRef} tabIndex={0} role="region" aria-label="甘特時間軸，使用上下鍵與 Page Down 捲動"

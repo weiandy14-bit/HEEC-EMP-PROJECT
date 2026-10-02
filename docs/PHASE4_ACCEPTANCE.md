@@ -38,3 +38,10 @@
 CI 硬門檻：典型 50 案 API / 首屏 P95 <3秒。大型資料按上述讀取範圍記錄實測，無擅自增加全量讀取保證。資料生成在獨立測試組織，正式資料不受修改。
 
 正式帳號密碼登入、Cloudflare/Neon 部署與完整 OIDC 安全驗收屬後續階段；Phase 4 使用既有開發身分介面。
+
+### 驗證補強
+
+- 個人甘特檢視保存到 system_settings（org + server-derived user key、版本化歷史與稽核）；Viewer 僅能保存自己的 UI 偏好，不改案件。前端另保留使用者命名空間的本機檢視。
+- 日曆採 resource_calendars 優先序選定資源 profile；parent_calendar_id 明確繼承週模式、疊加同日期例外，循環或不可用日曆隔離為該資源的 partial 佔位。
+- 指派缺日期保留 unplaced_sources 並標示 data_missing，不把無法分攤的 Work 當成已驗證的零需求。
+- 部分來源失敗已追加真實 PG 錯誤的服務測試、日曆循環隔離與甘特失敗排程狀態整合測試。

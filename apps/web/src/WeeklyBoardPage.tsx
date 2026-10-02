@@ -96,7 +96,7 @@ export function WeeklyBoardPage() {
         <div className="week-grid">
           {DAYS.map((label, i) => i===5 && !byDay[5].length ? null : (
             <section className="day-col" data-testid={i<5?"day-col":"weekend-col"} data-day={i} key={label}>
-              <h3>{label}</h3>
+              <h3>{label}{i<5&&<time dateTime={new Date(weekStartMs+i*DAY+480*60000).toISOString().slice(0,10)}> {new Date(weekStartMs+i*DAY+480*60000).toISOString().slice(5,10)}</time>}</h3>
               <div className="cards">
                 {byDay[i].map((it) => <ItemCard key={it.source.kind+':'+it.id} item={it} onOpen={el=>{focus.current=el;setSelected(it);}} />)}
               </div>
@@ -124,6 +124,7 @@ function ItemCard({ item,onOpen }: { item: WeeklyItem;onOpen:(el:HTMLElement)=>v
         <span className="proj" data-testid="item-project">{item.project_name}</span>
         <span className="assignee" data-testid="item-assignee">{item.assignee_name ?? '未指定'}</span>
         <span className="status">{item.status}</span>
+        {item.due_at&&<time dateTime={item.due_at}>{new Intl.DateTimeFormat('zh-TW',{timeZone:'Asia/Taipei',dateStyle:'short',timeStyle:'short'}).format(new Date(item.due_at))}</time>}
       </div>
       <button type="button" onClick={e=>onOpen(e.currentTarget)}>查看來源與完成確認：{item.title}</button>
     </article>

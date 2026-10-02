@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
+import { AuditService } from '../audit/audit.service';
 import { DomainError } from '../common/errors';
 import type { UserContext } from '../auth/request-context';
 import type { GanttQueryDto } from './dto';
@@ -43,8 +44,22 @@ interface GanttMilestone {
  */
 @Injectable()
 export class GanttService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(private readonly db: DatabaseService,private readonly audit:AuditService) {}
 
+
+  async savedView(ctx:UserContext){
+    const row=await this.db.queryOne<any>(`SELECT value FROM system_settings WHERE org_id=$1 AND key=$2 ORDER BY effective_at DESC LIMIT 1`,[ctx.orgId,`dashboard.gantt.view.${ctx.userId}`]);
+    return {view:row?.value??null};
+  }
+  async saveView(ctx:UserContext,view:import('./dto').SavedGanttViewDto){
+    if(view.from&&view.to&&Date.parse(view.from)>Date.parse(view.to))throw DomainError.validation('結束日期不能早於開始日期');
+    const key=`dashboard.gantt.view.${ctx.userId}`;
+    return this.db.transaction(async client=>{
+      const result=await client.query(`INSERT INTO system_settings(org_id,key,value,changed_by) VALUES($1,$2,$3,$4) RETURNING id`,[ctx.orgId,key,JSON.stringify(view),ctx.userId]);
+      await this.audit.write(client,ctx,{entityType:'dashboard_view',entityId:result.rows[0].id,action:'save',diff:{view}});
+      return {view};
+    });
+  }
   private resolveStatus(status?: string): string {
     // 「進行中」= projects.status='active'；接受 in_progress 別名
     if (!status || status === 'in_progress') return 'active';

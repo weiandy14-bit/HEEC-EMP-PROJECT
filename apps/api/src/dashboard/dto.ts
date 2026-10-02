@@ -37,3 +37,14 @@ export class WeeklyBoardQueryDto {
   @IsOptional() @IsIn(['交圖', '送審', '補正', '會議','里程碑','內部審查','協調','工作']) type?: string;
   @IsOptional() @IsUUID() assignee?: string;
 }
+
+export class SavedGanttViewDto {
+ @IsIn(['day','week','month']) zoom!: 'day'|'week'|'month';
+ @IsOptional() @IsUUID() project_id?:string;
+ @IsOptional() @IsUUID() resource_id?:string;
+ @IsOptional() @IsUUID() pm_id?:string;
+ @IsOptional() @IsUUID() discipline?:string;
+ @IsOptional() @IsDateString() from?:string;
+ @IsOptional() @IsDateString() to?:string;
+ @IsOptional() @IsIn(['in_progress','active','planning','on_hold','completed','cancelled']) status?:string;
+}

@@ -6,7 +6,7 @@ import type { GanttProject, GanttResponse } from '../types';
 const fetchGantt = vi.fn();
 const fetchGanttTask = vi.fn();
 const fetchGanttOptions = vi.fn();
-vi.mock('../api', () => ({ fetchGantt: (...a: unknown[]) => fetchGantt(...a),
+vi.mock('../api', () => ({fetchSavedGanttView:()=>Promise.resolve({view:null}),saveGanttView:()=>Promise.resolve(), fetchGantt: (...a: unknown[]) => fetchGantt(...a),
   fetchGanttOptions: () => fetchGanttOptions(), fetchGanttTask: (...a: unknown[]) => fetchGanttTask(...a) }));
 
 import { GanttPage } from '../GanttPage';

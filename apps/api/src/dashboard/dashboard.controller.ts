@@ -1,8 +1,8 @@
-import { Controller, Get, Header, Headers, Param, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Put, Header, Headers, Param, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
 import { GanttService } from './gantt.service';
 import { WorkloadService } from './workload.service';
 import { WeeklyBoardService } from './weekly.service';
-import { GanttQueryDto, WorkloadQueryDto, WeeklyBoardQueryDto } from './dto';
+import { SavedGanttViewDto, GanttQueryDto, WorkloadQueryDto, WeeklyBoardQueryDto } from './dto';
 import { AuthGuard, CurrentUser, type UserContext } from '../auth/request-context';
 import { RolesGuard } from '../auth/roles.guard';
 
@@ -20,6 +20,12 @@ export class DashboardController {
   async portfolioGantt(@CurrentUser() user: UserContext, @Query() q: GanttQueryDto) {
     return this.gantt.portfolio(user, q);
   }
+
+  @Get('gantt/view')
+  async savedGanttView(@CurrentUser() user:UserContext){return this.gantt.savedView(user);}
+
+  @Put('gantt/view')
+  async saveGanttView(@CurrentUser() user:UserContext,@Body() view:SavedGanttViewDto){return this.gantt.saveView(user,view);}
 
   @Get('gantt/options')
   async ganttOptions(@CurrentUser() user: UserContext) { return this.gantt.options(user); }

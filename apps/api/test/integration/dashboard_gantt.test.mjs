@@ -234,3 +234,19 @@ test('P4-A5 task keyset pages reach all 501 tasks and retain hierarchy without l
  assert.equal((await api('GET',`/dashboard/gantt?project_id=${a.p}&task_cursor=invalid`)).status,422);
  assert.equal((await api('GET','/dashboard/gantt?task_cursor=invalid')).status,422);
 });
+
+test('P4-A/U5 schedule failure stays visible with stale placeholder while healthy project remains readable',async()=>{
+ const a=await activeProjectWithTasks(),b=await activeProjectWithTasks();
+ await db().query(`INSERT INTO schedule_runs(org_id,project_id,input_hash,engine_version,status,finished_at) VALUES($1,$2,'failure-proof','test','failed',now())`,[ORG,a.p]);
+ const r=await api('GET',`/dashboard/gantt?limit=500`);assert.equal(r.status,200);const bad=r.body.projects.find(p=>p.id===a.p),good=r.body.projects.find(p=>p.id===b.p);
+ assert.equal(bad.error,true);assert.equal(bad.stale,true);assert.equal(good.error,false);assert.ok(good.tasks.length);
+});
+
+test('P4-A6 server saved views are per-user, versioned and audited, Viewer only edits own preference',async()=>{
+ const view={zoom:'month',from:'2027-03-01',to:'2027-03-31'};
+ const saved=await api('PUT','/dashboard/gantt/view',{roles:'Viewer',body:view});assert.equal(saved.status,200,JSON.stringify(saved.body));
+ const current=await api('GET','/dashboard/gantt/view');assert.deepEqual(current.body.view,view);
+ assert.equal((await api('GET','/dashboard/gantt/view',{user:randomUUID()})).body.view,null);
+ const audit=(await db().query(`SELECT count(*)::int AS n FROM audit_logs WHERE org_id=$1 AND actor_id=$2 AND entity_type='dashboard_view'`,[ORG,PM_USER])).rows[0];assert.ok(audit.n>=1);
+ assert.equal((await api('PUT','/dashboard/gantt/view',{body:{...view,from:'2027-04-01'}})).status,422);
+});

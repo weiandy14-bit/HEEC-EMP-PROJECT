@@ -139,7 +139,7 @@ export function WorkloadPage() {
           <tbody>
             {visible.map((r) => (
               <tr key={r.resource_id} data-testid="wl-row" data-resource-id={r.resource_id}>
-                <th className="name-col" scope="row">{r.name}<span className="muted"> ×{r.max_units}</span>{r.data_missing&&<span>資料缺漏</span>}</th>
+                <th className="name-col" scope="row"><span className="resource-name">{r.name}</span><span className="muted"> ×{r.max_units}</span>{r.data_missing&&<span>資料缺漏</span>}</th>
                 {r.error?<td colSpan={4} data-testid="partial-placeholder">日曆資料無法計算，請重試<button type="button" onClick={()=>void load()}>重試</button></td>:r.cells.map((c, i) => {
                   const band = loadBand(c);
                   const key = `${r.resource_id}:${i}`;

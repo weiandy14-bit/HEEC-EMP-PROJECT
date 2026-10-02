@@ -62,7 +62,7 @@ async function plans(label){
 try{
  report.postgres=(await pool.query('SELECT version()')).rows[0].version;
  await pool.query(`INSERT INTO organizations(id,code,name) VALUES($1,$2,'Dashboard performance')`,[org,'PERF-'+org]);
- await pool.query(`INSERT INTO users(id,org_id,issuer,subject,email,display_name) VALUES($1,$2,'perf',$1::text,'perf@example.invalid','Benchmark PM')`,[user,org]);
+ await pool.query(`INSERT INTO users(id,org_id,issuer,subject,email,display_name) VALUES($1::uuid,$2::uuid,'perf',($1::uuid)::text,'perf@example.invalid','Benchmark PM')`,[user,org]);
  await pool.query(`INSERT INTO calendars(id,org_id,name,timezone) VALUES($1,$2,'Performance calendar','Asia/Taipei')`,[cal,org]);
  await pool.query(`INSERT INTO calendar_working_days(org_id,calendar_id,weekday,local_start,local_end) SELECT $1,$2,d,start_at::time,end_at::time FROM generate_series(1,5)d CROSS JOIN (VALUES('09:00','12:00'),('13:00','18:00'))w(start_at,end_at)`,[org,cal]);
  const typical=await seedProjects(50);await seedTasks(typical,1,99);

@@ -4,7 +4,10 @@ import type { GanttProject, GanttResponse } from '../types';
 
 // 以 mock 取代 API，餵入固定資料驗證 UI 行為（API 真實路徑由後端整合測試覆蓋）
 const fetchGantt = vi.fn();
-vi.mock('../api', () => ({ fetchGantt: (...a: unknown[]) => fetchGantt(...a) }));
+const fetchGanttTask = vi.fn();
+const fetchGanttOptions = vi.fn();
+vi.mock('../api', () => ({ fetchGantt: (...a: unknown[]) => fetchGantt(...a),
+  fetchGanttOptions: () => fetchGanttOptions(), fetchGanttTask: (...a: unknown[]) => fetchGanttTask(...a) }));
 
 import { GanttPage } from '../GanttPage';
 
@@ -32,7 +35,7 @@ function resp(projects: GanttProject[], next_cursor: string | null = null): Gant
 }
 const ok = (body: GanttResponse) => Promise.resolve({ status: 200, body });
 
-beforeEach(() => { fetchGantt.mockReset(); localStorage.clear(); cleanup(); });
+beforeEach(() => { fetchGanttOptions.mockResolvedValue({ status: 200, body: { projects: [{id:'p1',name:'案一'}], pms:[], resources:[{id:'r1',name:'工程師一'}], disciplines:[] } }); fetchGanttTask.mockReset(); fetchGantt.mockReset(); localStorage.clear(); cleanup(); });
 
 describe('P4-A 多案總控甘特 UI', () => {
   it('A1：多案同一時間軸、WBS 父子可展開/收合、三態 bar', async () => {
@@ -113,6 +116,25 @@ describe('P4-A 多案總控甘特 UI', () => {
     expect(screen.getByTestId('zoom-day')).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('A6 engineer/project/date filters persist and task opens detail', async () => {
+    const t = task({ name: '詳細工作' });
+    fetchGantt.mockReturnValue(ok(resp([project({ id:'p1', tasks:[t] })])));
+    fetchGanttTask.mockResolvedValue({ status:200, body:{ task:{ ...t, project_name:'案一', duration_minutes:480, owner_name:'工程師一' }, assignments:[] } });
+    render(<GanttPage />);
+    await screen.findByTestId('gantt');
+    await waitFor(() => expect(screen.getByRole('option', {name:'工程師一'})).toBeInTheDocument());
+    fireEvent.change(screen.getByTestId('filter-resource'), {target:{value:'r1'}});
+    await waitFor(() => expect(fetchGantt).toHaveBeenLastCalledWith(expect.objectContaining({resource_id:'r1'})));
+    fireEvent.change(screen.getByLabelText('開始日期'), {target:{value:'2027-01-01'}});
+    await waitFor(() => expect(fetchGantt).toHaveBeenLastCalledWith(expect.objectContaining({from:'2027-01-01'})));
+    await screen.findByTestId('gantt');
+    fireEvent.click(screen.getByRole('button', {name:'詳細工作'}));
+    expect(await screen.findByText('專業／負責人')).toBeInTheDocument();
+    expect(fetchGanttTask).toHaveBeenCalledWith('p1',t.id);
+    fireEvent.click(screen.getByRole('button', {name:'關閉工作明細'}));
+    expect(screen.queryByText('專業／負責人')).not.toBeInTheDocument();
+  });
+
   it('U7：主框架 16:9、時間軸可水平捲動容器、名稱欄凍結', async () => {
     fetchGantt.mockReturnValue(ok(resp([project({ tasks: [task()] })])));
     render(<GanttPage />);
@@ -128,6 +150,7 @@ describe('P4-U 六種 UI 狀態', () => {
     fetchGantt.mockReturnValue(new Promise(() => {})); // 永不解析
     render(<GanttPage />);
     expect(screen.getByTestId('state-loading')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('option', { name: '工程師一' })).toBeInTheDocument());
   });
 
   it('U2 空：無進行中案件 → 引導', async () => {

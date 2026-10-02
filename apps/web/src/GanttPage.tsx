@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchGantt } from './api';
-import type { GanttProject, GanttTask, GanttFilters, Zoom } from './types';
+import { fetchGantt, fetchGanttOptions } from './api';
+import type { GanttProject, GanttTask, GanttFilters, GanttOptions, Zoom } from './types';
 import { LoadingState, EmptyState, ErrorState, NoPermissionState, PartialBanner } from './components/States';
 
 const VIEW_KEY = 'gantt.view.v1';
 const DEFAULT_FILTERS: GanttFilters = { zoom: 'week' };
-const UNIT_PX: Record<Zoom, number> = { day: 40, week: 24, month: 8 };
+import { timelineDomain, timelineTicks } from './timeline';
+import { TaskDetailPanel } from './TaskDetailPanel';
+const UNIT_PX: Record<Zoom, number> = { day: 40, week: 24, month: 6 };
 
 function loadSavedView(): GanttFilters {
   try {
@@ -17,9 +19,9 @@ function loadSavedView(): GanttFilters {
 
 const d = (s: string | null): number | null => (s ? Date.parse(s) : null);
 
-function useDomain(projects: GanttProject[]) {
+function useDomain(projects: GanttProject[], from?: string, to?: string) {
   return useMemo(() => {
-    const times: number[] = [Date.now()];
+    const times: number[] = [];
     for (const p of projects) {
       if (p.permit_filing_date) { const t = d(p.permit_filing_date); if (t) times.push(t); }
       for (const m of p.milestones) { const t = d(m.date); if (t) times.push(t); }
@@ -30,10 +32,8 @@ function useDomain(projects: GanttProject[]) {
         }
       }
     }
-    const min = Math.min(...times), max = Math.max(...times);
-    const span = Math.max(max - min, 24 * 3600 * 1000);
-    return { min, max: min + span, span };
-  }, [projects]);
+    return timelineDomain(times, from, to);
+  }, [projects, from, to]);
 }
 
 export function GanttPage() {
@@ -44,12 +44,24 @@ export function GanttPage() {
   const [errMsg, setErrMsg] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const reqId = useRef(0);
+  const [options, setOptions] = useState<GanttOptions>({ projects: [], pms: [], resources: [], disciplines: [] });
+  const [optionsError, setOptionsError] = useState('');
+  const [selected, setSelected] = useState<{ projectId: string; taskId: string } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void fetchGanttOptions().then((r) => {
+      if (!alive) return;
+      if (r.status === 200 && r.body) setOptions(r.body);
+      else setOptionsError('篩選選單暫時無法載入');
+    }).catch(() => { if (alive) setOptionsError('篩選選單暫時無法載入'); });
+    return () => { alive = false; };
+  }, []);
 
   const load = useCallback(async (reset: boolean, cursor?: string) => {
     const myReq = ++reqId.current;
     if (reset) setPhase('loading');
     try {
-      const r = await fetchGantt({ ...filters, cursor, limit: 50, status: 'in_progress' });
+      const r = await fetchGantt({ ...filters, cursor, limit: 50, status: filters.status ?? 'in_progress' });
       if (myReq !== reqId.current) return; // 丟棄過期請求
       if (r.status === 403) { setPhase('forbidden'); return; }
       if (r.status >= 400 || !r.body) { setPhase('error'); setErrMsg(`HTTP ${r.status}`); return; }
@@ -74,35 +86,42 @@ export function GanttPage() {
   const toggle = (id: string) =>
     setCollapsed((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-  const domain = useDomain(projects);
+  const domain = useDomain(projects, filters.from, filters.to);
+  const ticks = timelineTicks(domain.min, domain.max, filters.zoom);
   const pct = (t: number | null) => (t == null ? null : ((t - domain.min) / domain.span) * 100);
   const unitCount = Math.ceil(domain.span / (24 * 3600 * 1000));
-  const timelineWidth = Math.max(640, unitCount * (UNIT_PX[filters.zoom] / (filters.zoom === 'day' ? 1 : filters.zoom === 'week' ? 7 : 30)));
+  const timelineWidth = Math.max(640, 300 + unitCount * UNIT_PX[filters.zoom]);
   const todayLeft = pct(Date.now());
   const failed = projects.filter((p) => p.error);
 
-  if (phase === 'loading') return <Shell filters={filters} onZoom={setZoom} onFilter={update}><LoadingState /></Shell>;
-  if (phase === 'forbidden') return <Shell filters={filters} onZoom={setZoom} onFilter={update}><NoPermissionState /></Shell>;
-  if (phase === 'error') return <Shell filters={filters} onZoom={setZoom} onFilter={update}><ErrorState message={errMsg} onRetry={() => load(true)} /></Shell>;
-  if (phase === 'empty') return <Shell filters={filters} onZoom={setZoom} onFilter={update}><EmptyState message="目前沒有進行中的案件可顯示。" /></Shell>;
+  if (phase === 'loading') return <Shell options={options} optionsError={optionsError} filters={filters} onZoom={setZoom} onFilter={update}><LoadingState /></Shell>;
+  if (phase === 'forbidden') return <Shell options={options} optionsError={optionsError} filters={filters} onZoom={setZoom} onFilter={update}><NoPermissionState /></Shell>;
+  if (phase === 'error') return <Shell options={options} optionsError={optionsError} filters={filters} onZoom={setZoom} onFilter={update}><ErrorState message={errMsg} onRetry={() => load(true)} /></Shell>;
+  if (phase === 'empty') return <Shell options={options} optionsError={optionsError} filters={filters} onZoom={setZoom} onFilter={update}><EmptyState message="目前沒有進行中的案件可顯示。" /></Shell>;
 
   return (
-    <Shell filters={filters} onZoom={setZoom} onFilter={update}>
+    <Shell options={options} optionsError={optionsError} filters={filters} onZoom={setZoom} onFilter={update}>
       {failed.length > 0 && <PartialBanner failedCount={failed.length} />}
       <div className="gantt" data-testid="gantt" data-zoom={filters.zoom}>
         <div className="gantt-scroll" data-testid="timeline-scroll">
           <div className="gantt-body" style={{ minWidth: timelineWidth }}>
-            {todayLeft != null && (
+            <div className="row timeline-header" data-testid="timeline-header">
+              <div className="name-col">案件／WBS · 計畫／Baseline／實際</div>
+              <div className="lane">{ticks.map((tick) => <span key={tick.time} className="timeline-tick"
+                style={{ left: `${pct(tick.time)}%` }}>{tick.label}</span>)}</div>
+            </div>
+            {todayLeft != null && todayLeft >= 0 && todayLeft <= 100 && (
               <div className="today-line" data-testid="today-line" style={{ left: `calc(var(--name-col) + (100% - var(--name-col)) * ${todayLeft / 100})` }} aria-hidden="true" />
             )}
             {projects.map((p) => (
               <ProjectRows
-                key={p.id} project={p} collapsed={collapsed} onToggle={toggle} pct={pct}
+                key={p.id} project={p} collapsed={collapsed} onToggle={toggle} pct={pct} onTask={(taskId) => setSelected({ projectId: p.id, taskId })}
               />
             ))}
           </div>
         </div>
       </div>
+      {selected && <TaskDetailPanel projectId={selected.projectId} taskId={selected.taskId} onClose={() => setSelected(null)} />}
       {nextCursor && (
         <div className="load-more" data-testid="large-volume">
           <button type="button" onClick={() => load(false, nextCursor)}>載入更多案件</button>
@@ -113,9 +132,9 @@ export function GanttPage() {
 }
 
 function Shell(props: {
-  filters: GanttFilters; onZoom: (z: Zoom) => void; onFilter: (f: GanttFilters) => void; children: React.ReactNode;
+  options: GanttOptions; optionsError: string; filters: GanttFilters; onZoom: (z: Zoom) => void; onFilter: (f: GanttFilters) => void; children: React.ReactNode;
 }) {
-  const { filters, onZoom, onFilter, children } = props;
+  const { filters, onZoom, onFilter, children, options, optionsError } = props;
   return (
     <main className="app-16x9" data-testid="app-frame">
       <header className="toolbar">
@@ -128,10 +147,22 @@ function Shell(props: {
             </button>
           ))}
         </div>
-        <label className="filter">PM<input data-testid="filter-pm" aria-label="PM 篩選"
-          value={filters.pm_id ?? ''} onChange={(e) => onFilter({ ...filters, pm_id: e.target.value || undefined })} /></label>
-        <label className="filter">專業<input data-testid="filter-discipline" aria-label="專業篩選"
-          value={filters.discipline ?? ''} onChange={(e) => onFilter({ ...filters, discipline: e.target.value || undefined })} /></label>
+        {([['project_id','案件',options.projects],['pm_id','PM',options.pms],['discipline','專業',options.disciplines],['resource_id','工程師',options.resources]] as const).map(([key,label,items]) => (
+          <label className="filter" key={key}>{label}<select aria-label={`${label} 篩選`} data-testid={`filter-${key === 'pm_id' ? 'pm' : key === 'resource_id' ? 'resource' : key === 'project_id' ? 'project' : key}`}
+            value={filters[key] ?? ''} onChange={(e) => onFilter({ ...filters, [key]: e.target.value || undefined })}>
+            <option value="">全部</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select></label>
+        ))}
+        <label className="filter">狀態<select aria-label="案件狀態" value={filters.status ?? 'in_progress'}
+          onChange={(e) => onFilter({ ...filters, status: e.target.value })}>
+          <option value="in_progress">進行中</option><option value="planning">規劃中</option>
+          <option value="on_hold">暫停</option><option value="completed">已完成</option><option value="cancelled">取消</option>
+        </select></label>
+        <label className="filter">開始<input type="date" aria-label="開始日期" value={filters.from ?? ''}
+          max={filters.to} onChange={(e) => onFilter({ ...filters, from: e.target.value || undefined })} /></label>
+        <label className="filter">結束<input type="date" aria-label="結束日期" value={filters.to ?? ''}
+          min={filters.from} onChange={(e) => onFilter({ ...filters, to: e.target.value || undefined })} /></label>
+        {optionsError && <span role="status">{optionsError}</span>}
         <button type="button" data-testid="reset-view" onClick={() => onFilter({ zoom: 'week' })}>重設檢視</button>
       </header>
       {children}
@@ -139,8 +170,8 @@ function Shell(props: {
   );
 }
 
-function ProjectRows({ project, collapsed, onToggle, pct }: {
-  project: GanttProject; collapsed: Set<string>; onToggle: (id: string) => void; pct: (t: number | null) => number | null;
+function ProjectRows({ project, collapsed, onToggle, pct, onTask }: {
+  onTask: (taskId: string) => void; project: GanttProject; collapsed: Set<string>; onToggle: (id: string) => void; pct: (t: number | null) => number | null;
 }) {
   const childrenOf = useMemo(() => {
     const m = new Map<string | null, GanttTask[]>();
@@ -191,7 +222,7 @@ function ProjectRows({ project, collapsed, onToggle, pct }: {
                   {collapsed.has(task.id) ? '▸' : '▾'}
                 </button>
               ) : <span className="twisty-spacer" />}
-              <span className="wbs">{task.wbs_code}</span> {task.name}
+              <span className="wbs">{task.wbs_code}</span> <button className="task-link" type="button" onClick={() => onTask(task.id)}>{task.name}</button>
               <span className="task-status" data-testid="task-status">{statusLabel(task.status)}</span>
             </div>
             <div className="lane">

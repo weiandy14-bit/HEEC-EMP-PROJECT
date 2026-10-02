@@ -58,8 +58,26 @@ export interface GanttResponse {
   projects: GanttProject[];
 }
 
+export interface GanttOptions {
+  projects: { id: string; code: string; name: string }[];
+  pms: { id: string; name: string }[];
+  resources: { id: string; name: string }[];
+  disciplines: { id: string; name: string }[];
+}
+export interface GanttTaskDetail {
+  task: { id: string; project_id: string; project_name: string; wbs_code: string; name: string;
+    description: string | null; status: string; percent_complete: number; duration_minutes: number;
+    total_float_minutes: number | null; free_float_minutes: number | null; critical: boolean;
+    owner_name: string | null; discipline_name: string | null; planned: Bar; baseline: Bar; actual: Bar };
+  assignments: { id: string; resource_name: string; assignment_units: number; planned_work_minutes: number; booking_type: string }[];
+}
 export interface GanttFilters {
   zoom: Zoom;
+  project_id?: string;
+  resource_id?: string;
+  status?: string;
+  from?: string;
+  to?: string;
   pm_id?: string;
   discipline?: string;
 }

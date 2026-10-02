@@ -138,3 +138,14 @@ table.days thead th { background: var(--panel); color: var(--muted); }
 
 .team-summary { padding: 8px; max-height: 15%; overflow: auto; }
 .team-summary h2 { font-size: 13px; }
+
+.timeline-header { position: sticky; top: 0; z-index: 4; background: var(--panel); }
+.timeline-tick { position: absolute; border-left: 1px solid var(--border); padding: 4px; font-size: 11px; white-space: nowrap; }
+.filter select { max-width: 160px; padding: 3px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
+.filter input[type=date] { width: 135px; }
+.task-link { border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; overflow: hidden; text-overflow: ellipsis; }
+.task-link:hover { text-decoration: underline; }
+.task-detail { width: min(720px, 90vw); max-height: 80vh; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
+.task-detail::backdrop { background: #0f172a80; }
+.task-detail header { display: flex; justify-content: space-between; align-items: center; }
+.task-detail dt { font-weight: 600; }.task-detail dd { margin: 0 0 12px; }

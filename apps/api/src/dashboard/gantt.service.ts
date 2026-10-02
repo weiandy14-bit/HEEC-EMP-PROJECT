@@ -67,6 +67,12 @@ export class GanttService {
   }
 
   async portfolio(ctx: UserContext, q: GanttQueryDto) {
+    if (q.from && q.to && Date.parse(q.from) >= Date.parse(q.to)) {
+      throw DomainError.validation('結束日期必須晚於開始日期');
+    }
+    if (q.from && q.to && Date.parse(q.to) - Date.parse(q.from) > 3660 * 86400000) {
+      throw DomainError.validation('查詢範圍最多十年，請縮小日期區間');
+    }
     const zoom = q.zoom ?? 'week';
     const status = this.resolveStatus(q.status);
     const limit = q.limit ?? 50;
@@ -81,6 +87,11 @@ export class GanttService {
                   AND ${GanttService.VISIBILITY}`;
     if (q.pm_id) { params.push(q.pm_id); sql += ` AND p.pm_user_id = $${params.length}`; }
     if (q.project_id) { params.push(q.project_id); sql += ` AND p.id = $${params.length}`; }
+    if (q.resource_id) {
+      params.push(q.resource_id);
+      sql += ` AND EXISTS (SELECT 1 FROM resource_assignments a
+        WHERE a.org_id=p.org_id AND a.project_id=p.id AND a.resource_id=$${params.length} AND a.archived_at IS NULL)`;
+    }
     if (afterCode) { params.push(afterCode); sql += ` AND p.code > $${params.length}`; }
     params.push(limit + 1); // 多取一列以判斷是否尚有下一頁
     sql += ` ORDER BY p.code LIMIT $${params.length}`;
@@ -93,27 +104,38 @@ export class GanttService {
     }
     const ids = projects.map((p) => p.id);
 
-    // 2) 任務（批次；可選日期區間相交與專業篩選）
+    // Filter matched leaves in SQL, then keep ancestors so filtered WBS remains navigable.
     const tParams: unknown[] = [ctx.orgId, ids];
-    let tSql = `SELECT project_id, id, parent_task_id, wbs_code, sort_key, name, discipline_id,
-                       owner_user_id, milestone, summary, critical, status, percent_complete,
-                       planned_start, planned_finish, actual_start, actual_finish,
-                       baseline_start, baseline_finish
-                  FROM v_gantt_task
-                 WHERE org_id = $1 AND project_id = ANY($2)`;
-    if (q.discipline) { tParams.push(q.discipline); tSql += ` AND discipline_id = $${tParams.length}`; }
-    if (q.from) {
-      tParams.push(q.from);
-      tSql += ` AND (planned_finish IS NULL OR planned_finish >= $${tParams.length}
-                     OR baseline_finish >= $${tParams.length} OR actual_finish >= $${tParams.length})`;
+    let where = 't.org_id=$1 AND t.project_id=ANY($2)';
+    if (q.discipline) { tParams.push(q.discipline); where += ` AND t.discipline_id=$${tParams.length}`; }
+    if (q.resource_id) {
+      tParams.push(q.resource_id);
+      where += ` AND EXISTS (SELECT 1 FROM resource_assignments a WHERE a.org_id=t.org_id
+        AND a.project_id=t.project_id AND a.task_id=t.id AND a.resource_id=$${tParams.length} AND a.archived_at IS NULL)`;
     }
-    if (q.to) {
-      tParams.push(q.to);
-      tSql += ` AND (planned_start IS NULL OR planned_start < $${tParams.length}
-                     OR baseline_start < $${tParams.length} OR actual_start < $${tParams.length})`;
+    let fromParam: number | null = null, toParam: number | null = null;
+    if (q.from) { tParams.push(q.from); fromParam = tParams.length; }
+    if (q.to) { tParams.push(q.to); toParam = tParams.length; }
+    if (fromParam || toParam) {
+      where += ' AND (' + ['planned','baseline','actual'].map((kind) => {
+        const conditions = [`t.${kind}_start IS NOT NULL`];
+        if (fromParam) conditions.push(kind === 'actual'
+          ? `(t.actual_finish IS NULL OR t.actual_finish > $${fromParam} OR (t.actual_finish=t.actual_start AND t.actual_start >= $${fromParam}))`
+          : `(COALESCE(t.${kind}_finish,t.${kind}_start) > $${fromParam} OR (t.${kind}_finish=t.${kind}_start AND t.${kind}_start >= $${fromParam}))`);
+        if (toParam) conditions.push(`t.${kind}_start < $${toParam}`);
+        return '(' + conditions.join(' AND ') + ')';
+      }).join(' OR ') + ')';
     }
-    tSql += ` ORDER BY project_id, sort_key`;
-    const tasks = await this.db.query<any>(tSql, tParams);
+    const tasks = await this.db.query<any>(`
+      WITH RECURSIVE visible(project_id,id,parent_task_id) AS (
+        SELECT t.project_id,t.id,t.parent_task_id FROM v_gantt_task t WHERE ${where}
+        UNION
+        SELECT t.project_id,t.id,t.parent_task_id FROM v_gantt_task t
+        JOIN visible v ON t.project_id=v.project_id AND t.id=v.parent_task_id
+        WHERE t.org_id=$1 AND t.project_id=ANY($2)
+      )
+      SELECT t.* FROM v_gantt_task t JOIN visible v ON t.project_id=v.project_id AND t.id=v.id
+      WHERE t.org_id=$1 ORDER BY t.project_id,t.sort_key,t.id`, tParams);
 
     // 3) 相依（批次）
     const deps = await this.db.query<any>(
@@ -178,6 +200,53 @@ export class GanttService {
       zoom, from: q.from ?? null, to: q.to ?? null, next_cursor: nextCursor,
       projects: projects.map((p) => byProject.get(p.id)),
     };
+  }
+
+  /** Dictionary/options are drawn only from visible projects, never from a hardcoded UI list. */
+  async options(ctx: UserContext) {
+    const projects = await this.db.query<any>(`SELECT p.id,p.code,p.name,p.pm_user_id
+      FROM projects p WHERE p.org_id=$1 AND p.archived_at IS NULL AND ${GanttService.VISIBILITY.replaceAll('$3', '$2').replaceAll('$4', '$3')}
+      ORDER BY p.code`, [ctx.orgId, ctx.userId, ctx.roles.includes('Admin')]);
+    const ids = projects.map((p) => p.id);
+    const [pms, resources, disciplines] = await Promise.all([
+      this.db.query<any>(`SELECT id,display_name AS name FROM users WHERE org_id=$1 AND archived_at IS NULL
+        AND id=ANY($2::uuid[]) ORDER BY display_name`, [ctx.orgId, projects.map((p) => p.pm_user_id).filter(Boolean)]),
+      this.db.query<any>(`SELECT r.id,r.name FROM resources r WHERE r.org_id=$1 AND r.archived_at IS NULL
+        AND EXISTS (SELECT 1 FROM resource_assignments a WHERE a.org_id=r.org_id AND a.resource_id=r.id
+          AND a.project_id=ANY($2::uuid[]) AND a.archived_at IS NULL) ORDER BY r.name`, [ctx.orgId,ids]),
+      this.db.query<any>(`SELECT id,name FROM disciplines WHERE enabled=true ORDER BY sort_order,code`),
+    ]);
+    return { projects, pms, resources, disciplines };
+  }
+
+  async taskDetail(ctx: UserContext, projectId: string, taskId: string) {
+    const task = await this.db.queryOne<any>(`SELECT t.*,p.name AS project_name,
+        u.display_name AS owner_name,d.name AS discipline_name,
+        b.baseline_start,b.baseline_finish
+      FROM project_tasks t JOIN projects p ON p.org_id=t.org_id AND p.id=t.project_id
+      LEFT JOIN users u ON u.org_id=t.org_id AND u.id=t.owner_user_id
+      LEFT JOIN disciplines d ON d.id=t.discipline_id
+      LEFT JOIN v_gantt_task b ON b.org_id=t.org_id AND b.id=t.id
+      WHERE p.org_id=$1 AND p.id=$2 AND ${GanttService.VISIBILITY}
+        AND p.archived_at IS NULL AND t.id=$5 AND t.archived_at IS NULL`,
+      [ctx.orgId,projectId,ctx.userId,ctx.roles.includes('Admin'),taskId]);
+    if (!task) throw DomainError.notFound('工作');
+    const assignments = await this.db.query<any>(`SELECT a.id,a.resource_id,r.name AS resource_name,
+      a.assignment_units,a.planned_work_minutes,a.assignment_start,a.assignment_finish,a.booking_type
+      FROM resource_assignments a JOIN resources r ON r.org_id=a.org_id AND r.id=a.resource_id
+      WHERE a.org_id=$1 AND a.project_id=$2 AND a.task_id=$3 AND a.archived_at IS NULL
+      ORDER BY r.name,a.id`, [ctx.orgId,projectId,taskId]);
+    // Explicit response allowlist: task detail must not leak cost or internal metadata.
+    return { task: {
+      id:task.id,project_id:projectId,project_name:task.project_name,wbs_code:task.wbs_code,name:task.name,
+      description:task.description,status:task.status,percent_complete:Number(task.percent_complete),
+      duration_minutes:task.duration_minutes,total_float_minutes:task.total_float_minutes,
+      free_float_minutes:task.free_float_minutes,critical:task.critical,
+      owner_name:task.owner_name,discipline_name:task.discipline_name,
+      planned:{start:task.planned_start,finish:task.planned_finish},
+      baseline:{start:task.baseline_start,finish:task.baseline_finish},
+      actual:{start:task.actual_start,finish:task.actual_finish},
+    }, assignments };
   }
 
   /** 單案 drill-down（跨 org 或同 org 無該案權限 → 404，不洩存在性）。 */

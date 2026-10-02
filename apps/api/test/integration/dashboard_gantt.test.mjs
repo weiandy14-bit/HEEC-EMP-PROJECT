@@ -174,4 +174,42 @@ test('P4-A5(游標分頁)：101 個可視案件可完整翻頁取得第 101 筆'
   assert.ok(seen.has('PGN-101'), '第 101 筆可取得');
 });
 
+test('P4-A6 filtered leaves keep WBS ancestors; resource/date/discipline match and invalid interval rejects', async () => {
+  const a = await activeProjectWithTasks();
+  const sibling = (await api('POST', `/projects/${a.p}/tasks`, {body:{wbs_code:'1.2',name:'Sibling',duration_minutes:480,parent_task_id:a.parent.id}})).body;
+  await setPlannedCritical(a.child.id,'2027-01-12T01:00:00Z','2027-01-15T10:00:00Z');
+  await setPlannedCritical(sibling.id,'2027-02-01T01:00:00Z','2027-02-02T10:00:00Z');
+  const discipline = (await db().query(`SELECT id FROM disciplines WHERE enabled=true ORDER BY sort_order LIMIT 1`)).rows[0].id;
+  await db().query(`UPDATE project_tasks SET discipline_id=$2 WHERE id=$1`,[a.child.id,discipline]);
+  const res = randomUUID();
+  await db().query(`INSERT INTO resources(id,org_id,code,name,type) VALUES($1,$2,$3,'Filter resource','labor')`,[res,ORG,'GF-'+res]);
+  await db().query(`INSERT INTO resource_assignments(org_id,project_id,task_id,resource_id,planned_work_minutes) VALUES($1,$2,$3,$4,480)`,[ORG,a.p,a.child.id,res]);
+  const r = await api('GET', `/dashboard/gantt?project_id=${a.p}&resource_id=${res}&discipline=${discipline}&from=2027-01-12T00:00:00Z&to=2027-01-16T00:00:00Z`);
+  assert.equal(r.status,200,JSON.stringify(r.body));
+  assert.deepEqual(new Set(r.body.projects[0].tasks.map((t)=>t.id)),new Set([a.parent.id,a.child.id]));
+  const other = await activeProjectWithTasks();
+  const foreignMatch = await api('GET', `/dashboard/gantt?project_id=${other.p}&resource_id=${res}`);
+  assert.equal(foreignMatch.body.projects.length,0);
+  const invalid = await api('GET','/dashboard/gantt?from=2027-02-02T00:00:00Z&to=2027-02-01T00:00:00Z');
+  assert.equal(invalid.status,422);
+});
+
+test('P4-A6 name options and task detail retain project scope; cross-project task UUID is rejected', async () => {
+  const a = await activeProjectWithTasks(), b = await activeProjectWithTasks();
+  const options = await api('GET','/dashboard/gantt/options');
+  assert.equal(options.status,200,JSON.stringify(options.body));
+  assert.ok(options.body.projects.some((p)=>p.id===a.p));
+  assert.ok(options.body.disciplines.length>0);
+  const detail = await api('GET',`/projects/${a.p}/dashboard/gantt/tasks/${a.child.id}`);
+  assert.equal(detail.status,200,JSON.stringify(detail.body));
+  assert.equal(detail.body.task.id,a.child.id);
+  assert.ok(!('cost_rate' in detail.body.task));
+  assert.equal((await api('GET',`/projects/${b.p}/dashboard/gantt/tasks/${a.child.id}`)).status,404);
+  const outsider = randomUUID();
+  assert.equal((await api('GET',`/projects/${a.p}/dashboard/gantt/tasks/${a.child.id}`,{user:outsider,roles:'Engineer'})).status,404);
+  const hiddenOptions = await api('GET','/dashboard/gantt/options',{user:outsider,roles:'Engineer'});
+  assert.equal(hiddenOptions.status,200);
+  assert.equal(hiddenOptions.body.projects.some((p)=>p.id===a.p),false);
+});
+
 test.after(async () => { await closeDb(); });

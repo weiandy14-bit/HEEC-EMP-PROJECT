@@ -10,6 +10,7 @@ export class GanttQueryDto {
   @IsOptional() @IsDateString() to?: string;
   @IsOptional() @IsUUID() discipline?: string;
   @IsOptional() @IsUUID() pm_id?: string;
+  @IsOptional() @IsUUID() resource_id?: string;
   @IsOptional() @IsUUID() project_id?: string;
   @IsOptional() @IsString() cursor?: string; // base64url(code)，游標分頁
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(500) limit?: number;

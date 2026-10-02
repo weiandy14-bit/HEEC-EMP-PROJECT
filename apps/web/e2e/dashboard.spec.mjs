@@ -20,6 +20,8 @@ const weekly = { weekStart: '2027-03-08', weekEnd: '2027-03-13', items: [{ id: '
 async function fixtures(page) {
   await page.route('**/api/v1/**', async (route) => {
     const url = route.request().url();
+    if (url.includes('/gantt/options')) return route.fulfill({ json: { projects:[{id:'p1',name:'測試案'}],pms:[],resources:[{id:'r1',name:'測試工程師'}],disciplines:[] } });
+    if (url.includes('/gantt/tasks/')) return route.fulfill({ json: { task:{ ...task('A'), project_name:'測試案', description:null, percent_complete:0, duration_minutes:480 }, assignments:[] } });
     if (url.includes('/workload/export')) return route.fulfill({ contentType: 'text/csv', headers: { 'Content-Disposition': 'attachment; filename="workload.csv"' }, body: 'type,name\r\nresource,測試工程師\r\n' });
     await route.fulfill({ json: url.includes('/gantt') ? gantt : url.includes('/workload/resources/') ? resource : url.includes('/workload') ? workload : weekly });
   });
@@ -29,6 +31,12 @@ test('cross-page keyboard, visible dependencies, drill-down, download and deskto
   await fixtures(page); await page.goto('/');
   await expect(page.getByTestId('dep-line')).toBeVisible();
   await expect(page.getByTestId('dep-line')).toHaveAttribute('d', /^M /);
+  await expect(page.getByTestId('timeline-header')).toBeVisible();
+  await page.getByRole('button', {name:'工作 A', exact:true}).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('button', {name:'工作 A',exact:true})).toBeFocused();
   const toggle = page.getByRole('button', { name: '收合 工作 A' });
   await toggle.focus(); await page.keyboard.press('Enter');
   await expect(page.getByText('工作 B', { exact: false })).toHaveCount(0);

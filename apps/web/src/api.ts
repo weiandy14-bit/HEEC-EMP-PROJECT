@@ -1,4 +1,4 @@
-import type { GanttResponse, GanttFilters, WorkloadResponse, WorkloadResource, WorkloadFilters, WeeklyBoardResponse, WeeklyBoardFilters } from './types';
+import type { GanttResponse, GanttFilters, GanttOptions, GanttTaskDetail, WorkloadResponse, WorkloadResource, WorkloadFilters, WeeklyBoardResponse, WeeklyBoardFilters } from './types';
 
 export interface ApiResult<T> {
   status: number;
@@ -30,6 +30,10 @@ export async function fetchGantt(q: GanttQuery): Promise<ApiResult<GanttResponse
   const qs = new URLSearchParams();
   qs.set('zoom', q.zoom);
   qs.set('status', q.status ?? 'in_progress');
+  if (q.project_id) qs.set('project_id', q.project_id);
+  if (q.resource_id) qs.set('resource_id', q.resource_id);
+  if (q.from) qs.set('from', `${q.from}T00:00:00+08:00`);
+  if (q.to) qs.set('to', new Date(Date.parse(`${q.to}T00:00:00+08:00`) + 86400000).toISOString());
   if (q.pm_id) qs.set('pm_id', q.pm_id);
   if (q.discipline) qs.set('discipline', q.discipline);
   if (q.cursor) qs.set('cursor', q.cursor);
@@ -85,4 +89,13 @@ export async function downloadWorkload(q: WorkloadFilters): Promise<void> {
   link.href = url; link.download = 'workload.csv';
   document.body.appendChild(link); link.click(); link.remove();
   URL.revokeObjectURL(url);
+}
+
+export async function fetchGanttOptions(): Promise<ApiResult<GanttOptions>> {
+  const res = await fetch('/api/v1/dashboard/gantt/options', { headers: devHeaders() });
+  return { status: res.status, body: res.ok ? await res.json() as GanttOptions : null };
+}
+export async function fetchGanttTask(projectId: string, taskId: string): Promise<ApiResult<GanttTaskDetail>> {
+  const res = await fetch(`/api/v1/projects/${projectId}/dashboard/gantt/tasks/${taskId}`, { headers: devHeaders() });
+  return { status: res.status, body: res.ok ? await res.json() as GanttTaskDetail : null };
 }

@@ -21,6 +21,9 @@ export class DashboardController {
     return this.gantt.portfolio(user, q);
   }
 
+  @Get('gantt/options')
+  async ganttOptions(@CurrentUser() user: UserContext) { return this.gantt.options(user); }
+
   @Get('weekly')
   async weeklyBoard(@CurrentUser() user: UserContext, @Query() q: WeeklyBoardQueryDto) {
     return this.weekly.board(user, q);
@@ -54,6 +57,12 @@ export class DashboardController {
 @UseGuards(AuthGuard, RolesGuard)
 export class ProjectDashboardController {
   constructor(private readonly gantt: GanttService) {}
+
+  @Get('gantt/tasks/:t')
+  async taskDetail(@CurrentUser() user: UserContext,
+    @Param('p', ParseUUIDPipe) projectId: string, @Param('t', ParseUUIDPipe) taskId: string) {
+    return this.gantt.taskDetail(user, projectId, taskId);
+  }
 
   @Get('gantt')
   async projectGantt(

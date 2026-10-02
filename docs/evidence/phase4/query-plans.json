@@ -1,0 +1,1739 @@
+{
+  "source_run": 37025375590,
+  "note": "SQL and actual plan metrics retained. UUID parameter arrays and verbose predicates omitted. Full EXPLAIN ANALYZE BUFFERS files are in CI artifact dashboard-performance-evidence.",
+  "datasets": {
+    "typical": {
+      "source_sha256": "5b4b6e654039fa1fb31a929521ef482379dd056d0144b714feb53029751768a3",
+      "queries": [
+        {
+          "sql": "SELECT p.id, p.code, p.name, p.status, p.health, p.permit_filing_date, p.pm_user_id\n                 FROM projects p\n                WHERE p.org_id = $1 AND p.status = $2 AND p.archived_at IS NULL\n                  AND ( $4 OR p.created_by = $3 OR p.pm_user_id = $3\n       OR EXISTS (SELECT 1 FROM project_members m\n                   WHERE m.project_id = p.id AND m.user_id = $3 AND m.archived_at IS NULL) ) ORDER BY p.code LIMIT $5",
+          "parameter_shapes": [
+            {
+              "type": "str"
+            },
+            {
+              "type": "str"
+            },
+            {
+              "type": "str"
+            },
+            {
+              "type": "bool"
+            },
+            {
+              "type": "int"
+            }
+          ],
+          "plan": [
+            {
+              "Plan": {
+                "Node Type": "Limit",
+                "Actual Startup Time": 0.071,
+                "Actual Total Time": 0.077,
+                "Actual Rows": 50,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 5,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0,
+                "Plans": [
+                  {
+                    "Node Type": "Sort",
+                    "Parent Relationship": "Outer",
+                    "Actual Startup Time": 0.07,
+                    "Actual Total Time": 0.073,
+                    "Actual Rows": 50,
+                    "Actual Loops": 1,
+                    "Sort Method": "quicksort",
+                    "Sort Space Used": 31,
+                    "Sort Space Type": "Memory",
+                    "Shared Hit Blocks": 5,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0,
+                    "Plans": [
+                      {
+                        "Node Type": "Bitmap Heap Scan",
+                        "Parent Relationship": "Outer",
+                        "Relation Name": "projects",
+                        "Alias": "p",
+                        "Actual Startup Time": 0.029,
+                        "Actual Total Time": 0.046,
+                        "Actual Rows": 50,
+                        "Actual Loops": 1,
+                        "Rows Removed by Filter": 0,
+                        "Shared Hit Blocks": 5,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0,
+                        "Plans": [
+                          {
+                            "Node Type": "BitmapAnd",
+                            "Parent Relationship": "Outer",
+                            "Actual Startup Time": 0.022,
+                            "Actual Total Time": 0.023,
+                            "Actual Rows": 0,
+                            "Actual Loops": 1,
+                            "Shared Hit Blocks": 3,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 0,
+                            "Temp Written Blocks": 0,
+                            "Plans": [
+                              {
+                                "Node Type": "Bitmap Index Scan",
+                                "Parent Relationship": "Member",
+                                "Index Name": "uq_projects_org_id",
+                                "Actual Startup Time": 0.009,
+                                "Actual Total Time": 0.009,
+                                "Actual Rows": 50,
+                                "Actual Loops": 1,
+                                "Shared Hit Blocks": 2,
+                                "Shared Read Blocks": 0,
+                                "Temp Read Blocks": 0,
+                                "Temp Written Blocks": 0
+                              },
+                              {
+                                "Node Type": "Bitmap Index Scan",
+                                "Parent Relationship": "Member",
+                                "Index Name": "ix_projects_status_filing",
+                                "Actual Startup Time": 0.013,
+                                "Actual Total Time": 0.013,
+                                "Actual Rows": 168,
+                                "Actual Loops": 1,
+                                "Shared Hit Blocks": 1,
+                                "Shared Read Blocks": 0,
+                                "Temp Read Blocks": 0,
+                                "Temp Written Blocks": 0
+                              }
+                            ]
+                          },
+                          {
+                            "Node Type": "Seq Scan",
+                            "Parent Relationship": "SubPlan",
+                            "Relation Name": "project_members",
+                            "Alias": "m",
+                            "Actual Startup Time": 0,
+                            "Actual Total Time": 0,
+                            "Actual Rows": 0,
+                            "Actual Loops": 0,
+                            "Rows Removed by Filter": 0,
+                            "Shared Hit Blocks": 0,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 0,
+                            "Temp Written Blocks": 0
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "Planning Time": 0.134,
+              "Execution Time": 0.1
+            }
+          ]
+        },
+        {
+          "sql": "\n      WITH RECURSIVE candidates AS (\n        SELECT t.project_id,t.id,t.parent_task_id,t.sort_key,\n          row_number() OVER (PARTITION BY t.project_id ORDER BY t.sort_key,t.id) AS rn\n        FROM v_gantt_task t WHERE t.org_id=$1 AND t.project_id=ANY($2)\n      ), page_meta AS (\n        SELECT project_id,count(*) AS remaining_count,\n          max(sort_key) FILTER (WHERE rn=$3) AS last_sort,\n          max(id::text) FILTER (WHERE rn=$3) AS last_id\n        FROM candidates GROUP BY project_id\n      ), visible(project_id,id,parent_task_id) AS (\n        SELECT project_id,id,parent_task_id FROM candidates WHERE rn <= $3\n        UNION\n        SELECT t.project_id,t.id,t.parent_task_id FROM v_gantt_task t\n        JOIN visible v ON t.project_id=v.project_id AND t.id=v.parent_task_id\n        WHERE t.org_id=$1 AND t.project_id=ANY($2)\n      )\n      SELECT t.*,m.remaining_count,m.last_sort,m.last_id FROM v_gantt_task t\n      JOIN visible v ON t.project_id=v.project_id AND t.id=v.id\n      JOIN page_meta m ON m.project_id=t.project_id\n      WHERE t.org_id=$1 ORDER BY t.project_id,t.sort_key,t.id",
+          "parameter_shapes": [
+            {
+              "type": "str"
+            },
+            {
+              "type": "array",
+              "length": 50
+            },
+            {
+              "type": "int"
+            }
+          ],
+          "plan": [
+            {
+              "Plan": {
+                "Node Type": "Sort",
+                "Actual Startup Time": 29.421,
+                "Actual Total Time": 29.586,
+                "Actual Rows": 5000,
+                "Actual Loops": 1,
+                "Sort Method": "quicksort",
+                "Sort Space Used": 973,
+                "Sort Space Type": "Memory",
+                "Shared Hit Blocks": 10409,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0,
+                "Plans": [
+                  {
+                    "Node Type": "WindowAgg",
+                    "Parent Relationship": "InitPlan",
+                    "Actual Startup Time": 6.408,
+                    "Actual Total Time": 7.86,
+                    "Actual Rows": 5000,
+                    "Actual Loops": 1,
+                    "Shared Hit Blocks": 154,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0,
+                    "Plans": [
+                      {
+                        "Node Type": "Sort",
+                        "Parent Relationship": "Outer",
+                        "Actual Startup Time": 6.402,
+                        "Actual Total Time": 6.653,
+                        "Actual Rows": 5000,
+                        "Actual Loops": 1,
+                        "Sort Method": "quicksort",
+                        "Sort Space Used": 582,
+                        "Sort Space Type": "Memory",
+                        "Shared Hit Blocks": 154,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0,
+                        "Plans": [
+                          {
+                            "Node Type": "Hash Join",
+                            "Parent Relationship": "Outer",
+                            "Join Type": "Left",
+                            "Actual Startup Time": 0.168,
+                            "Actual Total Time": 2.411,
+                            "Actual Rows": 5000,
+                            "Actual Loops": 1,
+                            "Shared Hit Blocks": 154,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 0,
+                            "Temp Written Blocks": 0,
+                            "Plans": [
+                              {
+                                "Node Type": "Seq Scan",
+                                "Parent Relationship": "Outer",
+                                "Relation Name": "project_tasks",
+                                "Alias": "t_1",
+                                "Actual Startup Time": 0.156,
+                                "Actual Total Time": 1.825,
+                                "Actual Rows": 5000,
+                                "Actual Loops": 1,
+                                "Rows Removed by Filter": 552,
+                                "Shared Hit Blocks": 152,
+                                "Shared Read Blocks": 0,
+                                "Temp Read Blocks": 0,
+                                "Temp Written Blocks": 0
+                              },
+                              {
+                                "Node Type": "Hash",
+                                "Parent Relationship": "Inner",
+                                "Actual Startup Time": 0.009,
+                                "Actual Total Time": 0.01,
+                                "Actual Rows": 2,
+                                "Actual Loops": 1,
+                                "Peak Memory Usage": 9,
+                                "Shared Hit Blocks": 2,
+                                "Shared Read Blocks": 0,
+                                "Temp Read Blocks": 0,
+                                "Temp Written Blocks": 0,
+                                "Plans": [
+                                  {
+                                    "Node Type": "Bitmap Heap Scan",
+                                    "Parent Relationship": "Outer",
+                                    "Relation Name": "baselines",
+                                    "Alias": "b_1",
+                                    "Actual Startup Time": 0.006,
+                                    "Actual Total Time": 0.007,
+                                    "Actual Rows": 2,
+                                    "Actual Loops": 1,
+                                    "Shared Hit Blocks": 2,
+                                    "Shared Read Blocks": 0,
+                                    "Temp Read Blocks": 0,
+                                    "Temp Written Blocks": 0,
+                                    "Plans": [
+                                      {
+                                        "Node Type": "Bitmap Index Scan",
+                                        "Parent Relationship": "Outer",
+                                        "Index Name": "uq_baselines_active",
+                                        "Actual Startup Time": 0.003,
+                                        "Actual Total Time": 0.003,
+                                        "Actual Rows": 3,
+                                        "Actual Loops": 1,
+                                        "Shared Hit Blocks": 1,
+                                        "Shared Read Blocks": 0,
+                                        "Temp Read Blocks": 0,
+                                        "Temp Written Blocks": 0
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "Node Type": "Recursive Union",
+                    "Parent Relationship": "InitPlan",
+                    "Actual Startup Time": 0.004,
+                    "Actual Total Time": 7.385,
+                    "Actual Rows": 5000,
+                    "Actual Loops": 1,
+                    "Shared Hit Blocks": 5102,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0,
+                    "Plans": [
+                      {
+                        "Node Type": "CTE Scan",
+                        "Parent Relationship": "Outer",
+                        "Alias": "candidates_1",
+                        "Actual Startup Time": 0.002,
+                        "Actual Total Time": 0.734,
+                        "Actual Rows": 5000,
+                        "Actual Loops": 1,
+                        "Rows Removed by Filter": 0,
+                        "Shared Hit Blocks": 0,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0
+                      },
+                      {
+                        "Node Type": "Nested Loop",
+                        "Parent Relationship": "Inner",
+                        "Join Type": "Left",
+                        "Actual Startup Time": 1.682,
+                        "Actual Total Time": 4.657,
+                        "Actual Rows": 4950,
+                        "Actual Loops": 1,
+                        "Shared Hit Blocks": 5102,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0,
+                        "Plans": [
+                          {
+                            "Node Type": "Hash Join",
+                            "Parent Relationship": "Outer",
+                            "Join Type": "Inner",
+                            "Actual Startup Time": 1.679,
+                            "Actual Total Time": 2.693,
+                            "Actual Rows": 4950,
+                            "Actual Loops": 1,
+                            "Shared Hit Blocks": 152,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 0,
+                            "Temp Written Blocks": 0,
+                            "Plans": [
+                              {
+                                "Node Type": "WorkTable Scan",
+                                "Parent Relationship": "Outer",
+                                "Alias": "v_1",
+                                "Actual Startup Time": 0.002,
+                                "Actual Total Time": 0.203,
+                                "Actual Rows": 5000,
+                                "Actual Loops": 1,
+                                "Shared Hit Blocks": 0,
+                                "Shared Read Blocks": 0,
+                                "Temp Read Blocks": 0,
+                                "Temp Written Blocks": 0
+                              },
+                              {
+                                "Node Type": "Hash",
+                                "Parent Relationship": "Inner",
+                                "Actual Startup Time": 1.672,
+                                "Actual Total Time": 1.672,
+                                "Actual Rows": 5000,
+                                "Actual Loops": 1,
+                                "Peak Memory Usage": 454,
+                                "Shared Hit Blocks": 152,
+                                "Shared Read Blocks": 0,
+                                "Temp Read Blocks": 0,
+                                "Temp Written Blocks": 0,
+                                "Plans": [
+                                  {
+                                    "Node Type": "Seq Scan",
+                                    "Parent Relationship": "Outer",
+                                    "Relation Name": "project_tasks",
+                                    "Alias": "t_2",
+                                    "Actual Startup Time": 0.09,
+                                    "Actual Total Time": 1.072,
+                                    "Actual Rows": 5000,
+                                    "Actual Loops": 1,
+                                    "Rows Removed by Filter": 552,
+                                    "Shared Hit Blocks": 152,
+                                    "Shared Read Blocks": 0,
+                                    "Temp Read Blocks": 0,
+                                    "Temp Written Blocks": 0
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "Node Type": "Index Scan",
+                            "Parent Relationship": "Inner",
+                            "Scan Direction": "Forward",
+                            "Index Name": "uq_baselines_active",
+                            "Relation Name": "baselines",
+                            "Alias": "b_2",
+                            "Actual Startup Time": 0,
+                            "Actual Total Time": 0,
+                            "Actual Rows": 0,
+                            "Actual Loops": 4950,
+                            "Shared Hit Blocks": 4950,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 0,
+                            "Temp Written Blocks": 0
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "Node Type": "Hash Join",
+                    "Parent Relationship": "Outer",
+                    "Join Type": "Inner",
+                    "Actual Startup Time": 12.822,
+                    "Actual Total Time": 27.213,
+                    "Actual Rows": 5000,
+                    "Actual Loops": 1,
+                    "Shared Hit Blocks": 10409,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0,
+                    "Plans": [
+                      {
+                        "Node Type": "Hash Join",
+                        "Parent Relationship": "Outer",
+                        "Join Type": "Left",
+                        "Actual Startup Time": 3.253,
+                        "Actual Total Time": 16.69,
+                        "Actual Rows": 5000,
+                        "Actual Loops": 1,
+                        "Shared Hit Blocks": 10255,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0,
+                        "Plans": [
+                          {
+                            "Node Type": "Nested Loop",
+                            "Parent Relationship": "Outer",
+                            "Join Type": "Left",
+                            "Actual Startup Time": 3.235,
+                            "Actual Total Time": 15.849,
+                            "Actual Rows": 5000,
+                            "Actual Loops": 1,
+                            "Shared Hit Blocks": 10254,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 0,
+                            "Temp Written Blocks": 0,
+                            "Plans": [
+                              {
+                                "Node Type": "Hash Join",
+                                "Parent Relationship": "Outer",
+                                "Join Type": "Inner",
+                                "Actual Startup Time": 3.222,
+                                "Actual Total Time": 13.321,
+                                "Actual Rows": 5000,
+                                "Actual Loops": 1,
+                                "Shared Hit Blocks": 5254,
+                                "Shared Read Blocks": 0,
+                                "Temp Read Blocks": 0,
+                                "Temp Written Blocks": 0,
+                                "Plans": [
+                                  {
+                                    "Node Type": "CTE Scan",
+                                    "Parent Relationship": "Outer",
+                                    "Alias": "v",
+                                    "Actual Startup Time": 0.004,
+                                    "Actual Total Time": 8.584,
+                                    "Actual Rows": 5000,
+                                    "Actual Loops": 1,
+                                    "Shared Hit Blocks": 5102,
+                                    "Shared Read Blocks": 0,
+                                    "Temp Read Blocks": 0,
+                                    "Temp Written Blocks": 0
+                                  },
+                                  {
+                                    "Node Type": "Hash",
+                                    "Parent Relationship": "Inner",
+                                    "Actual Startup Time": 3.18,
+                                    "Actual Total Time": 3.181,
+                                    "Actual Rows": 5000,
+                                    "Actual Loops": 1,
+                                    "Peak Memory Usage": 845,
+                                    "Shared Hit Blocks": 152,
+                                    "Shared Read Blocks": 0,
+                                    "Temp Read Blocks": 0,
+                                    "Temp Written Blocks": 0,
+                                    "Plans": [
+                                      {
+                                        "Node Type": "Seq Scan",
+                                        "Parent Relationship": "Outer",
+                                        "Relation Name": "project_tasks",
+                                        "Alias": "t",
+                                        "Actual Startup Time": 0.154,
+                                        "Actual Total Time": 1.578,
+                                        "Actual Rows": 5000,
+                                        "Actual Loops": 1,
+                                        "Rows Removed by Filter": 552,
+                                        "Shared Hit Blocks": 152,
+                                        "Shared Read Blocks": 0,
+                                        "Temp Read Blocks": 0,
+                                        "Temp Written Blocks": 0
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "Node Type": "Index Scan",
+                                "Parent Relationship": "Inner",
+                                "Scan Direction": "Forward",
+                                "Index Name": "uq_baselines_active",
+                                "Relation Name": "baselines",
+                                "Alias": "b",
+                                "Actual Startup Time": 0,
+                                "Actual Total Time": 0,
+                                "Actual Rows": 0,
+                                "Actual Loops": 5000,
+                                "Shared Hit Blocks": 5000,
+                                "Shared Read Blocks": 0,
+                                "Temp Read Blocks": 0,
+                                "Temp Written Blocks": 0
+                              }
+                            ]
+                          },
+                          {
+                            "Node Type": "Hash",
+                            "Parent Relationship": "Inner",
+                            "Actual Startup Time": 0.012,
+                            "Actual Total Time": 0.012,
+                            "Actual Rows": 2,
+                            "Actual Loops": 1,
+                            "Peak Memory Usage": 9,
+                            "Shared Hit Blocks": 1,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 0,
+                            "Temp Written Blocks": 0,
+                            "Plans": [
+                              {
+                                "Node Type": "Seq Scan",
+                                "Parent Relationship": "Outer",
+                                "Relation Name": "baseline_tasks",
+                                "Alias": "bt",
+                                "Actual Startup Time": 0.004,
+                                "Actual Total Time": 0.004,
+                                "Actual Rows": 2,
+                                "Actual Loops": 1,
+                                "Shared Hit Blocks": 1,
+                                "Shared Read Blocks": 0,
+                                "Temp Read Blocks": 0,
+                                "Temp Written Blocks": 0
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "Node Type": "Hash",
+                        "Parent Relationship": "Inner",
+                        "Actual Startup Time": 9.558,
+                        "Actual Total Time": 9.559,
+                        "Actual Rows": 50,
+                        "Actual Loops": 1,
+                        "Peak Memory Usage": 11,
+                        "Shared Hit Blocks": 154,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0,
+                        "Plans": [
+                          {
+                            "Node Type": "Subquery Scan",
+                            "Parent Relationship": "Outer",
+                            "Alias": "m",
+                            "Actual Startup Time": 9.53,
+                            "Actual Total Time": 9.545,
+                            "Actual Rows": 50,
+                            "Actual Loops": 1,
+                            "Shared Hit Blocks": 154,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 0,
+                            "Temp Written Blocks": 0,
+                            "Plans": [
+                              {
+                                "Node Type": "Aggregate",
+                                "Parent Relationship": "Subquery",
+                                "Actual Startup Time": 9.529,
+                                "Actual Total Time": 9.538,
+                                "Actual Rows": 50,
+                                "Actual Loops": 1,
+                                "Peak Memory Usage": 40,
+                                "Shared Hit Blocks": 154,
+                                "Shared Read Blocks": 0,
+                                "Temp Read Blocks": 0,
+                                "Temp Written Blocks": 0,
+                                "Plans": [
+                                  {
+                                    "Node Type": "CTE Scan",
+                                    "Parent Relationship": "Outer",
+                                    "Alias": "candidates",
+                                    "Actual Startup Time": 6.425,
+                                    "Actual Total Time": 8.772,
+                                    "Actual Rows": 5000,
+                                    "Actual Loops": 1,
+                                    "Shared Hit Blocks": 154,
+                                    "Shared Read Blocks": 0,
+                                    "Temp Read Blocks": 0,
+                                    "Temp Written Blocks": 0
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "Planning Time": 1.18,
+              "Execution Time": 29.893
+            }
+          ]
+        },
+        {
+          "sql": "SELECT project_id, id, predecessor_task_id, successor_task_id, relation, lag_minutes\n         FROM task_dependencies\n        WHERE org_id = $1 AND project_id = ANY($2) AND archived_at IS NULL\n          AND (predecessor_task_id=ANY($3::uuid[]) OR successor_task_id=ANY($3::uuid[]))",
+          "parameter_shapes": [
+            {
+              "type": "str"
+            },
+            {
+              "type": "array",
+              "length": 50
+            },
+            {
+              "type": "array",
+              "length": 5000
+            }
+          ],
+          "plan": [
+            {
+              "Plan": {
+                "Node Type": "Seq Scan",
+                "Relation Name": "task_dependencies",
+                "Alias": "task_dependencies",
+                "Actual Startup Time": 0.006,
+                "Actual Total Time": 0.006,
+                "Actual Rows": 0,
+                "Actual Loops": 1,
+                "Rows Removed by Filter": 3,
+                "Shared Hit Blocks": 1,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              },
+              "Planning Time": 0.953,
+              "Execution Time": 0.017
+            }
+          ]
+        },
+        {
+          "sql": "SELECT r.project_id, r.id,\n              COALESCE(t.name, r.authority, '法定審查') AS name,\n              r.legal_due_date\n         FROM project_statutory_reviews r\n         LEFT JOIN statutory_review_templates t ON t.id = r.template_id\n        WHERE r.org_id = $1 AND r.project_id = ANY($2)\n          AND r.archived_at IS NULL AND r.applicability <> 'not_applicable'\n          AND r.legal_due_date IS NOT NULL",
+          "parameter_shapes": [
+            {
+              "type": "str"
+            },
+            {
+              "type": "array",
+              "length": 50
+            }
+          ],
+          "plan": [
+            {
+              "Plan": {
+                "Node Type": "Nested Loop",
+                "Join Type": "Left",
+                "Actual Startup Time": 0.01,
+                "Actual Total Time": 0.01,
+                "Actual Rows": 0,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 1,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0,
+                "Plans": [
+                  {
+                    "Node Type": "Seq Scan",
+                    "Parent Relationship": "Outer",
+                    "Relation Name": "project_statutory_reviews",
+                    "Alias": "r",
+                    "Actual Startup Time": 0.01,
+                    "Actual Total Time": 0.01,
+                    "Actual Rows": 0,
+                    "Actual Loops": 1,
+                    "Rows Removed by Filter": 19,
+                    "Shared Hit Blocks": 1,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0
+                  },
+                  {
+                    "Node Type": "Index Scan",
+                    "Parent Relationship": "Inner",
+                    "Scan Direction": "Forward",
+                    "Index Name": "statutory_review_templates_pkey",
+                    "Relation Name": "statutory_review_templates",
+                    "Alias": "t",
+                    "Actual Startup Time": 0,
+                    "Actual Total Time": 0,
+                    "Actual Rows": 0,
+                    "Actual Loops": 0,
+                    "Shared Hit Blocks": 0,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0
+                  }
+                ]
+              },
+              "Planning Time": 0.106,
+              "Execution Time": 0.022
+            }
+          ]
+        },
+        {
+          "sql": "\n      SELECT p.id,\n       EXISTS(SELECT 1 FROM project_tasks t WHERE t.project_id=p.id AND t.archived_at IS NULL AND t.updated_at>COALESCE(success.finished_at,'-infinity'::timestamptz))\n        OR EXISTS(SELECT 1 FROM task_dependencies d WHERE d.project_id=p.id AND d.archived_at IS NULL AND d.updated_at>COALESCE(success.finished_at,'-infinity'::timestamptz)) AS stale,\n       latest.status IN ('failed','infeasible') AS error\n      FROM projects p\n      LEFT JOIN LATERAL(SELECT finished_at FROM schedule_runs s WHERE s.project_id=p.id AND s.status='succeeded' ORDER BY finished_at DESC LIMIT 1) success ON true\n      LEFT JOIN LATERAL(SELECT status FROM schedule_runs s WHERE s.project_id=p.id ORDER BY started_at DESC,id DESC LIMIT 1) latest ON true\n      WHERE p.org_id=$1 AND p.id=ANY($2::uuid[])",
+          "parameter_shapes": [
+            {
+              "type": "str"
+            },
+            {
+              "type": "array",
+              "length": 50
+            }
+          ],
+          "plan": [
+            {
+              "Plan": {
+                "Node Type": "Nested Loop",
+                "Join Type": "Left",
+                "Actual Startup Time": 0.045,
+                "Actual Total Time": 0.186,
+                "Actual Rows": 50,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 219,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0,
+                "Plans": [
+                  {
+                    "Node Type": "Nested Loop",
+                    "Parent Relationship": "Outer",
+                    "Join Type": "Left",
+                    "Actual Startup Time": 0.032,
+                    "Actual Total Time": 0.067,
+                    "Actual Rows": 50,
+                    "Actual Loops": 1,
+                    "Shared Hit Blocks": 60,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0,
+                    "Plans": [
+                      {
+                        "Node Type": "Seq Scan",
+                        "Parent Relationship": "Outer",
+                        "Relation Name": "projects",
+                        "Alias": "p",
+                        "Actual Startup Time": 0.026,
+                        "Actual Total Time": 0.035,
+                        "Actual Rows": 50,
+                        "Actual Loops": 1,
+                        "Rows Removed by Filter": 203,
+                        "Shared Hit Blocks": 10,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0
+                      },
+                      {
+                        "Node Type": "Limit",
+                        "Parent Relationship": "Inner",
+                        "Actual Startup Time": 0,
+                        "Actual Total Time": 0,
+                        "Actual Rows": 0,
+                        "Actual Loops": 50,
+                        "Shared Hit Blocks": 50,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0,
+                        "Plans": [
+                          {
+                            "Node Type": "Index Only Scan",
+                            "Parent Relationship": "Outer",
+                            "Scan Direction": "Forward",
+                            "Index Name": "ix_schedule_success_finish",
+                            "Relation Name": "schedule_runs",
+                            "Alias": "s",
+                            "Actual Startup Time": 0,
+                            "Actual Total Time": 0,
+                            "Actual Rows": 0,
+                            "Actual Loops": 50,
+                            "Shared Hit Blocks": 50,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 0,
+                            "Temp Written Blocks": 0
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "Node Type": "Limit",
+                    "Parent Relationship": "Inner",
+                    "Actual Startup Time": 0.001,
+                    "Actual Total Time": 0.001,
+                    "Actual Rows": 0,
+                    "Actual Loops": 50,
+                    "Shared Hit Blocks": 50,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0,
+                    "Plans": [
+                      {
+                        "Node Type": "Incremental Sort",
+                        "Parent Relationship": "Outer",
+                        "Actual Startup Time": 0.001,
+                        "Actual Total Time": 0.001,
+                        "Actual Rows": 0,
+                        "Actual Loops": 50,
+                        "Shared Hit Blocks": 50,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0,
+                        "Plans": [
+                          {
+                            "Node Type": "Index Scan",
+                            "Parent Relationship": "Outer",
+                            "Scan Direction": "Forward",
+                            "Index Name": "ix_schedule_runs_project",
+                            "Relation Name": "schedule_runs",
+                            "Alias": "s_1",
+                            "Actual Startup Time": 0,
+                            "Actual Total Time": 0,
+                            "Actual Rows": 0,
+                            "Actual Loops": 50,
+                            "Shared Hit Blocks": 50,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 0,
+                            "Temp Written Blocks": 0
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "Node Type": "Index Only Scan",
+                    "Parent Relationship": "SubPlan",
+                    "Scan Direction": "Forward",
+                    "Index Name": "ix_tasks_project_updated",
+                    "Relation Name": "project_tasks",
+                    "Alias": "t",
+                    "Actual Startup Time": 0.001,
+                    "Actual Total Time": 0.001,
+                    "Actual Rows": 1,
+                    "Actual Loops": 50,
+                    "Shared Hit Blocks": 109,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0
+                  },
+                  {
+                    "Node Type": "Index Only Scan",
+                    "Parent Relationship": "SubPlan",
+                    "Scan Direction": "Forward",
+                    "Index Name": "ix_dependencies_project_updated",
+                    "Relation Name": "task_dependencies",
+                    "Alias": "d",
+                    "Actual Startup Time": 0,
+                    "Actual Total Time": 0,
+                    "Actual Rows": 0,
+                    "Actual Loops": 0,
+                    "Shared Hit Blocks": 0,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0
+                  }
+                ]
+              },
+              "Planning Time": 0.211,
+              "Execution Time": 0.207
+            }
+          ]
+        }
+      ]
+    },
+    "large": {
+      "source_sha256": "e40c07995eabc92b8477e002e2007774053657388b4cc45d9d5ec0f6f808690a",
+      "queries": [
+        {
+          "sql": "SELECT p.id, p.code, p.name, p.status, p.health, p.permit_filing_date, p.pm_user_id\n                 FROM projects p\n                WHERE p.org_id = $1 AND p.status = $2 AND p.archived_at IS NULL\n                  AND ( $4 OR p.created_by = $3 OR p.pm_user_id = $3\n       OR EXISTS (SELECT 1 FROM project_members m\n                   WHERE m.project_id = p.id AND m.user_id = $3 AND m.archived_at IS NULL) ) ORDER BY p.code LIMIT $5",
+          "parameter_shapes": [
+            {
+              "type": "str"
+            },
+            {
+              "type": "str"
+            },
+            {
+              "type": "str"
+            },
+            {
+              "type": "bool"
+            },
+            {
+              "type": "int"
+            }
+          ],
+          "plan": [
+            {
+              "Plan": {
+                "Node Type": "Limit",
+                "Actual Startup Time": 0.012,
+                "Actual Total Time": 0.028,
+                "Actual Rows": 51,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 4,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0,
+                "Plans": [
+                  {
+                    "Node Type": "Index Scan",
+                    "Parent Relationship": "Outer",
+                    "Scan Direction": "Forward",
+                    "Index Name": "uq_projects_code",
+                    "Relation Name": "projects",
+                    "Alias": "p",
+                    "Actual Startup Time": 0.011,
+                    "Actual Total Time": 0.024,
+                    "Actual Rows": 51,
+                    "Actual Loops": 1,
+                    "Rows Removed by Filter": 0,
+                    "Shared Hit Blocks": 4,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0,
+                    "Plans": [
+                      {
+                        "Node Type": "Seq Scan",
+                        "Parent Relationship": "SubPlan",
+                        "Relation Name": "project_members",
+                        "Alias": "m",
+                        "Actual Startup Time": 0,
+                        "Actual Total Time": 0,
+                        "Actual Rows": 0,
+                        "Actual Loops": 0,
+                        "Rows Removed by Filter": 0,
+                        "Shared Hit Blocks": 0,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0
+                      }
+                    ]
+                  }
+                ]
+              },
+              "Planning Time": 0.133,
+              "Execution Time": 0.051
+            }
+          ]
+        },
+        {
+          "sql": "\n      WITH RECURSIVE candidates AS (\n        SELECT t.project_id,t.id,t.parent_task_id,t.sort_key,\n          row_number() OVER (PARTITION BY t.project_id ORDER BY t.sort_key,t.id) AS rn\n        FROM v_gantt_task t WHERE t.org_id=$1 AND t.project_id=ANY($2)\n      ), page_meta AS (\n        SELECT project_id,count(*) AS remaining_count,\n          max(sort_key) FILTER (WHERE rn=$3) AS last_sort,\n          max(id::text) FILTER (WHERE rn=$3) AS last_id\n        FROM candidates GROUP BY project_id\n      ), visible(project_id,id,parent_task_id) AS (\n        SELECT project_id,id,parent_task_id FROM candidates WHERE rn <= $3\n        UNION\n        SELECT t.project_id,t.id,t.parent_task_id FROM v_gantt_task t\n        JOIN visible v ON t.project_id=v.project_id AND t.id=v.parent_task_id\n        WHERE t.org_id=$1 AND t.project_id=ANY($2)\n      )\n      SELECT t.*,m.remaining_count,m.last_sort,m.last_id FROM v_gantt_task t\n      JOIN visible v ON t.project_id=v.project_id AND t.id=v.id\n      JOIN page_meta m ON m.project_id=t.project_id\n      WHERE t.org_id=$1 ORDER BY t.project_id,t.sort_key,t.id",
+          "parameter_shapes": [
+            {
+              "type": "str"
+            },
+            {
+              "type": "array",
+              "length": 50
+            },
+            {
+              "type": "int"
+            }
+          ],
+          "plan": [
+            {
+              "Plan": {
+                "Node Type": "Sort",
+                "Actual Startup Time": 1459.528,
+                "Actual Total Time": 1460.252,
+                "Actual Rows": 10000,
+                "Actual Loops": 1,
+                "Sort Method": "quicksort",
+                "Sort Space Used": 2418,
+                "Sort Space Type": "Memory",
+                "Shared Hit Blocks": 27704,
+                "Shared Read Blocks": 54277,
+                "Temp Read Blocks": 12410,
+                "Temp Written Blocks": 12416,
+                "Plans": [
+                  {
+                    "Node Type": "WindowAgg",
+                    "Parent Relationship": "InitPlan",
+                    "Actual Startup Time": 524.586,
+                    "Actual Total Time": 610.862,
+                    "Actual Rows": 250000,
+                    "Actual Loops": 1,
+                    "Shared Hit Blocks": 7204,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 1959,
+                    "Temp Written Blocks": 1965,
+                    "Plans": [
+                      {
+                        "Node Type": "Gather Merge",
+                        "Parent Relationship": "Outer",
+                        "Actual Startup Time": 524.58,
+                        "Actual Total Time": 570.035,
+                        "Actual Rows": 250000,
+                        "Actual Loops": 1,
+                        "Shared Hit Blocks": 7204,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 1959,
+                        "Temp Written Blocks": 1965,
+                        "Plans": [
+                          {
+                            "Node Type": "Sort",
+                            "Parent Relationship": "Outer",
+                            "Actual Startup Time": 481.258,
+                            "Actual Total Time": 489.685,
+                            "Actual Rows": 83333,
+                            "Actual Loops": 3,
+                            "Sort Method": "quicksort",
+                            "Sort Space Used": 27,
+                            "Sort Space Type": "Memory",
+                            "Shared Hit Blocks": 7204,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 1959,
+                            "Temp Written Blocks": 1965,
+                            "Plans": [
+                              {
+                                "Node Type": "Hash Join",
+                                "Parent Relationship": "Outer",
+                                "Join Type": "Left",
+                                "Actual Startup Time": 306.011,
+                                "Actual Total Time": 338.753,
+                                "Actual Rows": 83333,
+                                "Actual Loops": 3,
+                                "Shared Hit Blocks": 7170,
+                                "Shared Read Blocks": 0,
+                                "Temp Read Blocks": 0,
+                                "Temp Written Blocks": 0,
+                                "Plans": [
+                                  {
+                                    "Node Type": "Bitmap Heap Scan",
+                                    "Parent Relationship": "Outer",
+                                    "Relation Name": "project_tasks",
+                                    "Alias": "t_1",
+                                    "Actual Startup Time": 305.848,
+                                    "Actual Total Time": 325.833,
+                                    "Actual Rows": 83333,
+                                    "Actual Loops": 3,
+                                    "Rows Removed by Filter": 0,
+                                    "Shared Hit Blocks": 7107,
+                                    "Shared Read Blocks": 0,
+                                    "Temp Read Blocks": 0,
+                                    "Temp Written Blocks": 0,
+                                    "Plans": [
+                                      {
+                                        "Node Type": "Bitmap Index Scan",
+                                        "Parent Relationship": "Outer",
+                                        "Index Name": "ix_tasks_project_updated",
+                                        "Actual Startup Time": 5.229,
+                                        "Actual Total Time": 5.23,
+                                        "Actual Rows": 250000,
+                                        "Actual Loops": 1,
+                                        "Shared Hit Blocks": 350,
+                                        "Shared Read Blocks": 0,
+                                        "Temp Read Blocks": 0,
+                                        "Temp Written Blocks": 0
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "Node Type": "Hash",
+                                    "Parent Relationship": "Inner",
+                                    "Actual Startup Time": 0.048,
+                                    "Actual Total Time": 0.05,
+                                    "Actual Rows": 3,
+                                    "Actual Loops": 3,
+                                    "Peak Memory Usage": 9,
+                                    "Shared Hit Blocks": 3,
+                                    "Shared Read Blocks": 0,
+                                    "Temp Read Blocks": 0,
+                                    "Temp Written Blocks": 0,
+                                    "Plans": [
+                                      {
+                                        "Node Type": "Seq Scan",
+                                        "Parent Relationship": "Outer",
+                                        "Relation Name": "baselines",
+                                        "Alias": "b_1",
+                                        "Actual Startup Time": 0.042,
+                                        "Actual Total Time": 0.043,
+                                        "Actual Rows": 3,
+                                        "Actual Loops": 3,
+                                        "Rows Removed by Filter": 0,
+                                        "Shared Hit Blocks": 3,
+                                        "Shared Read Blocks": 0,
+                                        "Temp Read Blocks": 0,
+                                        "Temp Written Blocks": 0
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "Node Type": "Recursive Union",
+                    "Parent Relationship": "InitPlan",
+                    "Actual Startup Time": 524.594,
+                    "Actual Total Time": 639.124,
+                    "Actual Rows": 10000,
+                    "Actual Loops": 1,
+                    "Shared Hit Blocks": 7460,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 3865,
+                    "Temp Written Blocks": 1607,
+                    "Plans": [
+                      {
+                        "Node Type": "CTE Scan",
+                        "Parent Relationship": "Outer",
+                        "Alias": "candidates_1",
+                        "Actual Startup Time": 524.592,
+                        "Actual Total Time": 538.354,
+                        "Actual Rows": 10000,
+                        "Actual Loops": 1,
+                        "Rows Removed by Filter": 240000,
+                        "Shared Hit Blocks": 352,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 2259,
+                        "Temp Written Blocks": 1
+                      },
+                      {
+                        "Node Type": "Hash Join",
+                        "Parent Relationship": "Inner",
+                        "Join Type": "Left",
+                        "Actual Startup Time": 83.463,
+                        "Actual Total Time": 96.838,
+                        "Actual Rows": 9950,
+                        "Actual Loops": 1,
+                        "Shared Hit Blocks": 7108,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 1606,
+                        "Temp Written Blocks": 1606,
+                        "Plans": [
+                          {
+                            "Node Type": "Hash Join",
+                            "Parent Relationship": "Outer",
+                            "Join Type": "Inner",
+                            "Actual Startup Time": 83.426,
+                            "Actual Total Time": 95.837,
+                            "Actual Rows": 9950,
+                            "Actual Loops": 1,
+                            "Shared Hit Blocks": 7107,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 1606,
+                            "Temp Written Blocks": 1606,
+                            "Plans": [
+                              {
+                                "Node Type": "WorkTable Scan",
+                                "Parent Relationship": "Outer",
+                                "Alias": "v_1",
+                                "Actual Startup Time": 6.709,
+                                "Actual Total Time": 7.209,
+                                "Actual Rows": 10000,
+                                "Actual Loops": 1,
+                                "Shared Hit Blocks": 0,
+                                "Shared Read Blocks": 0,
+                                "Temp Read Blocks": 0,
+                                "Temp Written Blocks": 0
+                              },
+                              {
+                                "Node Type": "Hash",
+                                "Parent Relationship": "Inner",
+                                "Actual Startup Time": 76.068,
+                                "Actual Total Time": 76.069,
+                                "Actual Rows": 250000,
+                                "Actual Loops": 1,
+                                "Peak Memory Usage": 5887,
+                                "Shared Hit Blocks": 7107,
+                                "Shared Read Blocks": 0,
+                                "Temp Read Blocks": 0,
+                                "Temp Written Blocks": 1557,
+                                "Plans": [
+                                  {
+                                    "Node Type": "Bitmap Heap Scan",
+                                    "Parent Relationship": "Outer",
+                                    "Relation Name": "project_tasks",
+                                    "Alias": "t_2",
+                                    "Actual Startup Time": 5.268,
+                                    "Actual Total Time": 37.606,
+                                    "Actual Rows": 250000,
+                                    "Actual Loops": 1,
+                                    "Rows Removed by Filter": 0,
+                                    "Shared Hit Blocks": 7107,
+                                    "Shared Read Blocks": 0,
+                                    "Temp Read Blocks": 0,
+                                    "Temp Written Blocks": 0,
+                                    "Plans": [
+                                      {
+                                        "Node Type": "Bitmap Index Scan",
+                                        "Parent Relationship": "Outer",
+                                        "Index Name": "ix_tasks_project_updated",
+                                        "Actual Startup Time": 4.633,
+                                        "Actual Total Time": 4.633,
+                                        "Actual Rows": 250000,
+                                        "Actual Loops": 1,
+                                        "Shared Hit Blocks": 350,
+                                        "Shared Read Blocks": 0,
+                                        "Temp Read Blocks": 0,
+                                        "Temp Written Blocks": 0
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "Node Type": "Hash",
+                            "Parent Relationship": "Inner",
+                            "Actual Startup Time": 0.021,
+                            "Actual Total Time": 0.022,
+                            "Actual Rows": 3,
+                            "Actual Loops": 1,
+                            "Peak Memory Usage": 9,
+                            "Shared Hit Blocks": 1,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 0,
+                            "Temp Written Blocks": 0,
+                            "Plans": [
+                              {
+                                "Node Type": "Seq Scan",
+                                "Parent Relationship": "Outer",
+                                "Relation Name": "baselines",
+                                "Alias": "b_2",
+                                "Actual Startup Time": 0.013,
+                                "Actual Total Time": 0.014,
+                                "Actual Rows": 3,
+                                "Actual Loops": 1,
+                                "Rows Removed by Filter": 0,
+                                "Shared Hit Blocks": 1,
+                                "Shared Read Blocks": 0,
+                                "Temp Read Blocks": 0,
+                                "Temp Written Blocks": 0
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "Node Type": "Hash Join",
+                    "Parent Relationship": "Outer",
+                    "Join Type": "Left",
+                    "Actual Startup Time": 1293.503,
+                    "Actual Total Time": 1446.347,
+                    "Actual Rows": 10000,
+                    "Actual Loops": 1,
+                    "Shared Hit Blocks": 20852,
+                    "Shared Read Blocks": 54277,
+                    "Temp Read Blocks": 10451,
+                    "Temp Written Blocks": 10451,
+                    "Plans": [
+                      {
+                        "Node Type": "Hash Join",
+                        "Parent Relationship": "Outer",
+                        "Join Type": "Left",
+                        "Actual Startup Time": 1292.611,
+                        "Actual Total Time": 1443.612,
+                        "Actual Rows": 10000,
+                        "Actual Loops": 1,
+                        "Shared Hit Blocks": 20765,
+                        "Shared Read Blocks": 54277,
+                        "Temp Read Blocks": 10451,
+                        "Temp Written Blocks": 10451,
+                        "Plans": [
+                          {
+                            "Node Type": "Hash Join",
+                            "Parent Relationship": "Outer",
+                            "Join Type": "Inner",
+                            "Actual Startup Time": 1292.581,
+                            "Actual Total Time": 1442.557,
+                            "Actual Rows": 10000,
+                            "Actual Loops": 1,
+                            "Shared Hit Blocks": 20764,
+                            "Shared Read Blocks": 54277,
+                            "Temp Read Blocks": 10451,
+                            "Temp Written Blocks": 10451,
+                            "Plans": [
+                              {
+                                "Node Type": "CTE Scan",
+                                "Parent Relationship": "Outer",
+                                "Alias": "v",
+                                "Actual Startup Time": 524.597,
+                                "Actual Total Time": 641.074,
+                                "Actual Rows": 10000,
+                                "Actual Loops": 1,
+                                "Shared Hit Blocks": 7460,
+                                "Shared Read Blocks": 0,
+                                "Temp Read Blocks": 3865,
+                                "Temp Written Blocks": 1607
+                              },
+                              {
+                                "Node Type": "Hash",
+                                "Parent Relationship": "Inner",
+                                "Actual Startup Time": 766.705,
+                                "Actual Total Time": 766.708,
+                                "Actual Rows": 250000,
+                                "Actual Loops": 1,
+                                "Peak Memory Usage": 1134,
+                                "Shared Hit Blocks": 13304,
+                                "Shared Read Blocks": 54277,
+                                "Temp Read Blocks": 0,
+                                "Temp Written Blocks": 8686,
+                                "Plans": [
+                                  {
+                                    "Node Type": "Hash Join",
+                                    "Parent Relationship": "Outer",
+                                    "Join Type": "Inner",
+                                    "Actual Startup Time": 171.827,
+                                    "Actual Total Time": 665.97,
+                                    "Actual Rows": 250000,
+                                    "Actual Loops": 1,
+                                    "Shared Hit Blocks": 13304,
+                                    "Shared Read Blocks": 54277,
+                                    "Temp Read Blocks": 0,
+                                    "Temp Written Blocks": 2258,
+                                    "Plans": [
+                                      {
+                                        "Node Type": "Seq Scan",
+                                        "Parent Relationship": "Outer",
+                                        "Relation Name": "project_tasks",
+                                        "Alias": "t",
+                                        "Actual Startup Time": 0.137,
+                                        "Actual Total Time": 343.629,
+                                        "Actual Rows": 2500000,
+                                        "Actual Loops": 1,
+                                        "Rows Removed by Filter": 552,
+                                        "Shared Hit Blocks": 13304,
+                                        "Shared Read Blocks": 54277,
+                                        "Temp Read Blocks": 0,
+                                        "Temp Written Blocks": 0
+                                      },
+                                      {
+                                        "Node Type": "Hash",
+                                        "Parent Relationship": "Inner",
+                                        "Actual Startup Time": 171.619,
+                                        "Actual Total Time": 171.621,
+                                        "Actual Rows": 50,
+                                        "Actual Loops": 1,
+                                        "Peak Memory Usage": 13,
+                                        "Shared Hit Blocks": 0,
+                                        "Shared Read Blocks": 0,
+                                        "Temp Read Blocks": 0,
+                                        "Temp Written Blocks": 2258,
+                                        "Plans": [
+                                          {
+                                            "Node Type": "Subquery Scan",
+                                            "Parent Relationship": "Outer",
+                                            "Alias": "m",
+                                            "Actual Startup Time": 171.593,
+                                            "Actual Total Time": 171.606,
+                                            "Actual Rows": 50,
+                                            "Actual Loops": 1,
+                                            "Shared Hit Blocks": 0,
+                                            "Shared Read Blocks": 0,
+                                            "Temp Read Blocks": 0,
+                                            "Temp Written Blocks": 2258,
+                                            "Plans": [
+                                              {
+                                                "Node Type": "Aggregate",
+                                                "Parent Relationship": "Subquery",
+                                                "Actual Startup Time": 171.59,
+                                                "Actual Total Time": 171.599,
+                                                "Actual Rows": 50,
+                                                "Actual Loops": 1,
+                                                "Peak Memory Usage": 48,
+                                                "Shared Hit Blocks": 0,
+                                                "Shared Read Blocks": 0,
+                                                "Temp Read Blocks": 0,
+                                                "Temp Written Blocks": 2258,
+                                                "Plans": [
+                                                  {
+                                                    "Node Type": "CTE Scan",
+                                                    "Parent Relationship": "Outer",
+                                                    "Alias": "candidates",
+                                                    "Actual Startup Time": 0,
+                                                    "Actual Total Time": 144.156,
+                                                    "Actual Rows": 250000,
+                                                    "Actual Loops": 1,
+                                                    "Shared Hit Blocks": 0,
+                                                    "Shared Read Blocks": 0,
+                                                    "Temp Read Blocks": 0,
+                                                    "Temp Written Blocks": 2258
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "Node Type": "Hash",
+                            "Parent Relationship": "Inner",
+                            "Actual Startup Time": 0.016,
+                            "Actual Total Time": 0.017,
+                            "Actual Rows": 3,
+                            "Actual Loops": 1,
+                            "Peak Memory Usage": 9,
+                            "Shared Hit Blocks": 1,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 0,
+                            "Temp Written Blocks": 0,
+                            "Plans": [
+                              {
+                                "Node Type": "Seq Scan",
+                                "Parent Relationship": "Outer",
+                                "Relation Name": "baselines",
+                                "Alias": "b",
+                                "Actual Startup Time": 0.013,
+                                "Actual Total Time": 0.013,
+                                "Actual Rows": 3,
+                                "Actual Loops": 1,
+                                "Rows Removed by Filter": 0,
+                                "Shared Hit Blocks": 1,
+                                "Shared Read Blocks": 0,
+                                "Temp Read Blocks": 0,
+                                "Temp Written Blocks": 0
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "Node Type": "Hash",
+                        "Parent Relationship": "Inner",
+                        "Actual Startup Time": 0.88,
+                        "Actual Total Time": 0.88,
+                        "Actual Rows": 5002,
+                        "Actual Loops": 1,
+                        "Peak Memory Usage": 455,
+                        "Shared Hit Blocks": 87,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0,
+                        "Plans": [
+                          {
+                            "Node Type": "Seq Scan",
+                            "Parent Relationship": "Outer",
+                            "Relation Name": "baseline_tasks",
+                            "Alias": "bt",
+                            "Actual Startup Time": 0.005,
+                            "Actual Total Time": 0.338,
+                            "Actual Rows": 5002,
+                            "Actual Loops": 1,
+                            "Shared Hit Blocks": 87,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 0,
+                            "Temp Written Blocks": 0
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "Planning Time": 1.097,
+              "Execution Time": 1466.362
+            }
+          ]
+        },
+        {
+          "sql": "SELECT project_id, id, predecessor_task_id, successor_task_id, relation, lag_minutes\n         FROM task_dependencies\n        WHERE org_id = $1 AND project_id = ANY($2) AND archived_at IS NULL\n          AND (predecessor_task_id=ANY($3::uuid[]) OR successor_task_id=ANY($3::uuid[]))",
+          "parameter_shapes": [
+            {
+              "type": "str"
+            },
+            {
+              "type": "array",
+              "length": 50
+            },
+            {
+              "type": "array",
+              "length": 10000
+            }
+          ],
+          "plan": [
+            {
+              "Plan": {
+                "Node Type": "Seq Scan",
+                "Relation Name": "task_dependencies",
+                "Alias": "task_dependencies",
+                "Actual Startup Time": 0.204,
+                "Actual Total Time": 1.037,
+                "Actual Rows": 4999,
+                "Actual Loops": 1,
+                "Rows Removed by Filter": 3,
+                "Shared Hit Blocks": 103,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              },
+              "Planning Time": 4.464,
+              "Execution Time": 1.197
+            }
+          ]
+        },
+        {
+          "sql": "SELECT r.project_id, r.id,\n              COALESCE(t.name, r.authority, '法定審查') AS name,\n              r.legal_due_date\n         FROM project_statutory_reviews r\n         LEFT JOIN statutory_review_templates t ON t.id = r.template_id\n        WHERE r.org_id = $1 AND r.project_id = ANY($2)\n          AND r.archived_at IS NULL AND r.applicability <> 'not_applicable'\n          AND r.legal_due_date IS NOT NULL",
+          "parameter_shapes": [
+            {
+              "type": "str"
+            },
+            {
+              "type": "array",
+              "length": 50
+            }
+          ],
+          "plan": [
+            {
+              "Plan": {
+                "Node Type": "Nested Loop",
+                "Join Type": "Left",
+                "Actual Startup Time": 0.013,
+                "Actual Total Time": 0.013,
+                "Actual Rows": 0,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 1,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0,
+                "Plans": [
+                  {
+                    "Node Type": "Seq Scan",
+                    "Parent Relationship": "Outer",
+                    "Relation Name": "project_statutory_reviews",
+                    "Alias": "r",
+                    "Actual Startup Time": 0.012,
+                    "Actual Total Time": 0.013,
+                    "Actual Rows": 0,
+                    "Actual Loops": 1,
+                    "Rows Removed by Filter": 19,
+                    "Shared Hit Blocks": 1,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0
+                  },
+                  {
+                    "Node Type": "Index Scan",
+                    "Parent Relationship": "Inner",
+                    "Scan Direction": "Forward",
+                    "Index Name": "statutory_review_templates_pkey",
+                    "Relation Name": "statutory_review_templates",
+                    "Alias": "t",
+                    "Actual Startup Time": 0,
+                    "Actual Total Time": 0,
+                    "Actual Rows": 0,
+                    "Actual Loops": 0,
+                    "Shared Hit Blocks": 0,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0
+                  }
+                ]
+              },
+              "Planning Time": 0.107,
+              "Execution Time": 0.026
+            }
+          ]
+        },
+        {
+          "sql": "\n      SELECT p.id,\n       EXISTS(SELECT 1 FROM project_tasks t WHERE t.project_id=p.id AND t.archived_at IS NULL AND t.updated_at>COALESCE(success.finished_at,'-infinity'::timestamptz))\n        OR EXISTS(SELECT 1 FROM task_dependencies d WHERE d.project_id=p.id AND d.archived_at IS NULL AND d.updated_at>COALESCE(success.finished_at,'-infinity'::timestamptz)) AS stale,\n       latest.status IN ('failed','infeasible') AS error\n      FROM projects p\n      LEFT JOIN LATERAL(SELECT finished_at FROM schedule_runs s WHERE s.project_id=p.id AND s.status='succeeded' ORDER BY finished_at DESC LIMIT 1) success ON true\n      LEFT JOIN LATERAL(SELECT status FROM schedule_runs s WHERE s.project_id=p.id ORDER BY started_at DESC,id DESC LIMIT 1) latest ON true\n      WHERE p.org_id=$1 AND p.id=ANY($2::uuid[])",
+          "parameter_shapes": [
+            {
+              "type": "str"
+            },
+            {
+              "type": "array",
+              "length": 50
+            }
+          ],
+          "plan": [
+            {
+              "Plan": {
+                "Node Type": "Nested Loop",
+                "Join Type": "Left",
+                "Actual Startup Time": 0.062,
+                "Actual Total Time": 0.518,
+                "Actual Rows": 50,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 274,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0,
+                "Plans": [
+                  {
+                    "Node Type": "Nested Loop",
+                    "Parent Relationship": "Outer",
+                    "Join Type": "Left",
+                    "Actual Startup Time": 0.038,
+                    "Actual Total Time": 0.144,
+                    "Actual Rows": 50,
+                    "Actual Loops": 1,
+                    "Shared Hit Blocks": 73,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0,
+                    "Plans": [
+                      {
+                        "Node Type": "Seq Scan",
+                        "Parent Relationship": "Outer",
+                        "Relation Name": "projects",
+                        "Alias": "p",
+                        "Actual Startup Time": 0.032,
+                        "Actual Total Time": 0.11,
+                        "Actual Rows": 50,
+                        "Actual Loops": 1,
+                        "Rows Removed by Filter": 653,
+                        "Shared Hit Blocks": 23,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0
+                      },
+                      {
+                        "Node Type": "Limit",
+                        "Parent Relationship": "Inner",
+                        "Actual Startup Time": 0,
+                        "Actual Total Time": 0,
+                        "Actual Rows": 0,
+                        "Actual Loops": 50,
+                        "Shared Hit Blocks": 50,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0,
+                        "Plans": [
+                          {
+                            "Node Type": "Index Only Scan",
+                            "Parent Relationship": "Outer",
+                            "Scan Direction": "Forward",
+                            "Index Name": "ix_schedule_success_finish",
+                            "Relation Name": "schedule_runs",
+                            "Alias": "s",
+                            "Actual Startup Time": 0,
+                            "Actual Total Time": 0,
+                            "Actual Rows": 0,
+                            "Actual Loops": 50,
+                            "Shared Hit Blocks": 50,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 0,
+                            "Temp Written Blocks": 0
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "Node Type": "Limit",
+                    "Parent Relationship": "Inner",
+                    "Actual Startup Time": 0.001,
+                    "Actual Total Time": 0.001,
+                    "Actual Rows": 0,
+                    "Actual Loops": 50,
+                    "Shared Hit Blocks": 50,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0,
+                    "Plans": [
+                      {
+                        "Node Type": "Incremental Sort",
+                        "Parent Relationship": "Outer",
+                        "Actual Startup Time": 0.001,
+                        "Actual Total Time": 0.001,
+                        "Actual Rows": 0,
+                        "Actual Loops": 50,
+                        "Shared Hit Blocks": 50,
+                        "Shared Read Blocks": 0,
+                        "Temp Read Blocks": 0,
+                        "Temp Written Blocks": 0,
+                        "Plans": [
+                          {
+                            "Node Type": "Index Scan",
+                            "Parent Relationship": "Outer",
+                            "Scan Direction": "Forward",
+                            "Index Name": "ix_schedule_runs_project",
+                            "Relation Name": "schedule_runs",
+                            "Alias": "s_1",
+                            "Actual Startup Time": 0,
+                            "Actual Total Time": 0,
+                            "Actual Rows": 0,
+                            "Actual Loops": 50,
+                            "Shared Hit Blocks": 50,
+                            "Shared Read Blocks": 0,
+                            "Temp Read Blocks": 0,
+                            "Temp Written Blocks": 0
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "Node Type": "Index Only Scan",
+                    "Parent Relationship": "SubPlan",
+                    "Scan Direction": "Forward",
+                    "Index Name": "ix_tasks_project_updated",
+                    "Relation Name": "project_tasks",
+                    "Alias": "t",
+                    "Actual Startup Time": 0.006,
+                    "Actual Total Time": 0.006,
+                    "Actual Rows": 1,
+                    "Actual Loops": 50,
+                    "Shared Hit Blocks": 151,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0
+                  },
+                  {
+                    "Node Type": "Index Only Scan",
+                    "Parent Relationship": "SubPlan",
+                    "Scan Direction": "Forward",
+                    "Index Name": "ix_dependencies_project_updated",
+                    "Relation Name": "task_dependencies",
+                    "Alias": "d",
+                    "Actual Startup Time": 0,
+                    "Actual Total Time": 0,
+                    "Actual Rows": 0,
+                    "Actual Loops": 0,
+                    "Shared Hit Blocks": 0,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0
+                  }
+                ]
+              },
+              "Planning Time": 0.233,
+              "Execution Time": 0.542
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

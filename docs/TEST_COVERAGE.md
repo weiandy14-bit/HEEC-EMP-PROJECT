@@ -3,10 +3,9 @@
 對照《MEP Phase 0 架構規格 v0.6》§7 案例（T01–T10）、§10 R03，與排程核心行為維度。
 狀態：✅ 已覆蓋　⚠️ 部分覆蓋　❌ 未覆蓋（缺口）
 
-現有測試檔：
-- `packages/scheduler/test/calendar.test.ts`（工作時間引擎，9 測試）
-- `packages/scheduler/test/schedule.test.ts`（CPM 與案例，11 測試）
-- 合計 **20 測試全過**（`npm test`）。
+現有排程測試：`calendar.test.ts`、`schedule.test.ts`、`constraints.test.ts`、`phase2.test.ts`、`property.test.ts`，合計 **49 測試**（`npm test`）。
+
+跨層驗證另見 `apps/api/test/integration/dashboard_workload.test.mjs`、DB 規則測試與 [Phase 4 驗收追溯](PHASE4_ACCEPTANCE.md)。測試數量與程式碼覆蓋率是不同指標，不以案例數宣稱 90% 覆蓋率。
 
 ## 規格案例對照（§7 / §10）
 
@@ -17,10 +16,10 @@
 | R03 | 基本設計 vs 建築/結構/MEP 同步協調 SS 並行；明列雙方 start/finish，協調在基設完成前開始 | `R03 平行協調…` | ✅ |
 | T03 | FS−4h 與午休，後續於前項完成前 4 工作小時開始（負 lag） | `T03…` | ✅ |
 | T04 | FF、SF 各一鏈，界限依 finish/start 公式、無倒置 | `T04…` | ✅ |
-| T05 | 假日 → 任務按 project calendar 略過假日 | `T05…` + `假日例外…` | ⚠️（專案日曆假日已覆蓋；資源個人休假容量另屬負荷層，未涵蓋） |
+| T05 | 假日 → 任務按 project calendar 略過假日 | `T05…` + `假日例外…` | ✅（專案日曆單元測試＋Phase 4 資源假期容量整合測試） |
 | T06 | 循環、孤立、負工期 → 預覽拒絕並列節點/邊 | `T06…` | ✅ |
 | T07 | MustFinishOn 晚於掛件允許日 → scheduling conflict | `T07…` | ✅ |
-| T08 | Baseline 後延誤、已完成任務：基準/實績不變，未完項重排 | `T08…` | ⚠️（實績鎖定已覆蓋；Baseline 不可變與 late_days 屬 DB/服務層，scheduler 未涵蓋） |
+| T08 | Baseline 後延誤、已完成任務：基準/實績不變，未完項重排 | `T08…` | ✅（實績鎖定、late_days 單元測試＋G9 DB 不可變快照） |
 | T09 | 重複重算相同輸入 → 相同 result hash | `T09…` | ✅ |
 | T10 | 5000 tasks、效能門檻 | `T10…` | ⚠️（單案 5000 已覆蓋 <5s；多案不同日曆隔離未涵蓋於單元層） |
 
@@ -36,7 +35,7 @@
 | 負 lag | T03（FS−4h）、G2 正例 | ✅ |
 | 負 lag 上限（D06）拒絕 | G2（自訂上限、預設 14400 分） | ✅ |
 | 假日（專案日曆） | T05、`假日例外…` | ✅ |
-| 個人休假/資源容量扣除 | — | ❌ 缺口（屬負荷層 §7 負荷，尚未實作） |
+| 個人休假/資源容量扣除 | dashboard_workload.test.mjs（假期、日曆繼承、每日明細、零容量） | ✅ |
 | 循環相依 | T06 | ✅ |
 | 孤立/未連通錨點 | T06 | ✅ |
 | 負工期 | T06 | ✅ |
@@ -72,9 +71,9 @@
 | G5 | 超期關鍵（負浮時標記，overCritical） | §7 | P1 | ✅ 已完成（`schedule.ts`+`phase2.test.ts`，正例與對照） |
 | G6 | statusDate 進行中剩餘重排 | §7 狀態日 | P1 | ✅ 已完成（`phase2.test.ts`，正+負） |
 | G7 | property-based（隨機 DAG+日曆） | §10 | P1 | ✅ 已完成（`property.test.ts`） |
-| G8 | 多案隔離效能（T10 延伸） | §7 T10；§1 | P2 | ❌ 未完成 |
+| G8 | 多案隔離效能（T10 延伸） | §7 T10；§1 | P2 | ✅ Phase 4 完成（500 案 / 2.5M tasks、P95、EXPLAIN、無 N+1；見 PHASE4_ACCEPTANCE.md） |
 | G9 | Baseline 不可變 / late_days | §7 基準/進度；R05 | P2 | ✅ 已完成（late_days 純函式 + DB 觸發器 `db/tests/g9…`） |
 | G10 | 實績一致性（完成=100↔完成日期） | §7 進度規則 | P2 | ✅ 已完成（DB CHECK `db/tests/g10…`） |
 
 **Phase 2 收尾已完成**：G1、G2、G3、G4、G5、G6、G7、G9、G10（含開工前門檻之 G9 起日修正、G2 重疊斷言、G4 非工作時段、G5 超期關鍵、G7 property-based）。
-**剩餘缺口**：G8 多案效能（P2，Phase 2 效能延伸）；不影響已接受之驗收，可於效能壓測階段補。
+**G1–G10 已有對應證據**：G8 已於 Phase 4 完成核定 Dashboard 讀取範圍的多案實測。這不替代 Phase 6 的多人並行、持續壓力、安全與災難復原測試。

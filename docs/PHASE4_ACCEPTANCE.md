@@ -1,6 +1,6 @@
 # Phase 4 驗收追溯
 
-狀態：功能收尾已實作，等待本批 CI、真實 DB / 瀏覽器 / 效能實測。此狀態不代表已驗收完成。
+狀態：**Phase 4 已完成驗收**（2026-10-02）。程式版本 `1d005784b31f9060f82937191b71f46282079814`，CI [37025375590](https://github.com/weiandy14-bit/HEEC-EMP-PROJECT/actions/runs/37025375590) `verify=success`。以下結果來自真實 PostgreSQL 與 Chromium；文件收尾提交沿用相同程式版本並再次執行完整 CI。
 
 | 驗收 | 設計 / 實作 | 證據入口 |
 |---|---|---|
@@ -45,3 +45,34 @@ CI 硬門檻：典型 50 案 API / 首屏 P95 <3秒。大型資料按上述讀�
 - 日曆採 resource_calendars 優先序選定資源 profile；parent_calendar_id 明確繼承週模式、疊加同日期例外，循環或不可用日曆隔離為該資源的 partial 佔位。
 - 指派缺日期保留 unplaced_sources 並標示 data_missing，不把無法分攤的 Work 當成已驗證的零需求。
 - 部分來源失敗已追加真實 PG 錯誤的服務測試、日曆循環隔離與甘特失敗排程狀態整合測試。
+
+## 實際驗收結果
+
+| 門檻 | 結果 |
+|---|---|
+| lint / typecheck / build | 全部通過 |
+| scheduler / web 單元 | 49 / 40 通過 |
+| 真實 PostgreSQL API 整合 | 96 通過（含權限、IDOR、來源完成、讀寫一致、partial、輪廓與分頁） |
+| Native Chromium | 14 通過；1280×720 與 1920×1080，每頁 axe WCAG 2.1 A/AA 與鍵盤/焦點驗證 |
+| fresh migration / seed | 19 migrations、seed 通過 |
+| G9 / G10 DB 規則、smoke 正負例 | ALL PASS / SMOKE PASS |
+| 大型資料 | 500 active projects × 5,000 tasks = 2,500,000；單案 5,000 任務五頁無漏列 |
+
+### P4-A5 / G8 效能證據
+
+CI runner：4 vCPU、約 15.6 GiB RAM、AMD EPYC 9V74、PostgreSQL 16.15。每組 20 次樣本；不是 300 人同時使用的壓測，該項仍屬 Phase 6。
+
+| 實際資料集 | 甘特 API P95 | 1280×720 首屏 P95 | 1920×1080 首屏 P95 | 聚合 SQL 次數 |
+|---|---:|---:|---:|---:|
+| 50 案 × 100 tasks | 1,076 ms | 368 ms | 426 ms | 5 |
+| 500 案 × 5,000 tasks | 1,572 ms | 3,405 ms | 3,411 ms | 5 |
+
+典型範圍 API 與首屏皆低於核定 3 秒門檻。大型範圍首屏約 3.41 秒，按核定規格記錄實測值，未宣稱大型首屏也低於 3 秒。大型首屏 API 讀取 50 案 × 200 候選工作＋祖先＋接觸相依，回應約 5.45 MB；完整資料透過分頁載入。SQL 次數在 limit=1 與 limit=50 一致，無 N+1。大型 task 查詢 EXPLAIN execution time 1,466 ms；主要成本為候選排序與即時 view，其他四查詢各低於 2 ms。保留即時 SQL，不以快取掩蓋查詢成本。
+
+同資料庫中，300 位工程師四週負荷 API P95 67 ms；500 案本週事項（50 項分頁）API P95 322 ms。
+
+永久證據：[原始量測報告](evidence/phase4/performance-report.json)、[SQL 與查詢計畫摘要](evidence/phase4/query-plans.json)。完整 EXPLAIN、兩種桌面截圖、axe 與瀏覽器附件位於上述 CI artifacts，保留 14 日；腳本可重跑產生新證據。`report.commit` 是 GitHub PR merge 測試 SHA，branch head 另記於 provenance。
+
+### 下一階段界線
+
+本頁全部 Phase 4 編號已對應測試與證據。人工輔助科技完整認證、300 人並行壓測、正式 OIDC/Cloudflare/Neon 上線、備份還原演練屬 Phase 6；Microsoft Project 交換屬 Phase 5。現有開發身分介面不代表正式網站已可從外部帳密登入。

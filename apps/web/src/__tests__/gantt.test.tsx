@@ -135,6 +135,18 @@ describe('P4-A 多案總控甘特 UI', () => {
     expect(screen.queryByText('專業／負責人')).not.toBeInTheDocument();
   });
 
+  it('A6 explicit range clips bars and hides outside milestones', async () => {
+    fetchGantt.mockReturnValue(ok(resp([project({ tasks:[task()],milestones:[{kind:'permit_filing',id:'p1',name:'掛件',date:'2027-01-11'}] })])));
+    render(<GanttPage />);
+    await screen.findByTestId('gantt');
+    fireEvent.change(screen.getByLabelText('開始日期'),{target:{value:'2027-01-13'}});
+    await screen.findByTestId('gantt');
+    fireEvent.change(screen.getByLabelText('結束日期'),{target:{value:'2027-01-14'}});
+    await screen.findByTestId('gantt');
+    expect(screen.getByTestId('bar-planned')).toHaveStyle({left:'0%',width:'100%'});
+    expect(screen.queryByTestId('milestone')).not.toBeInTheDocument();
+  });
+
   it('U7：主框架 16:9、時間軸可水平捲動容器、名稱欄凍結', async () => {
     fetchGantt.mockReturnValue(ok(resp([project({ tasks: [task()] })])));
     render(<GanttPage />);

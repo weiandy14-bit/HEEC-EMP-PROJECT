@@ -10,10 +10,8 @@ export function TaskDetailPanel({ projectId, taskId, onClose }: { projectId: str
   const [forbidden, setForbidden] = useState(false);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    const trigger = document.activeElement as HTMLElement | null;
     const el = dialog.current;
     if (el?.showModal) el.showModal(); else el?.setAttribute('open', '');
-    return () => { if (trigger?.isConnected) trigger.focus(); };
   }, []);
   useEffect(() => {
     let alive = true;
@@ -26,8 +24,9 @@ export function TaskDetailPanel({ projectId, taskId, onClose }: { projectId: str
     }).catch((e: unknown) => { if (alive) setError(e instanceof Error ? e.message : '工作明細載入失敗'); });
     return () => { alive = false; };
   }, [projectId, taskId, attempt]);
-  return <dialog ref={dialog} className="task-detail" aria-labelledby="task-detail-title" onCancel={onClose}>
-    <header><h2 id="task-detail-title">工作明細</h2><button type="button" onClick={onClose}>關閉工作明細</button></header>
+  const close = () => { dialog.current?.close?.(); onClose(); };
+  return <dialog ref={dialog} className="task-detail" aria-labelledby="task-detail-title" onCancel={(event) => { event.preventDefault(); close(); }}>
+    <header><h2 id="task-detail-title">工作明細</h2><button type="button" onClick={close}>關閉工作明細</button></header>
     {forbidden ? <NoPermissionState /> : error ? <ErrorState message={error} onRetry={() => setAttempt((a) => a + 1)} /> : !data ? <LoadingState /> : <>
       <h3>{data.task.project_name} · {data.task.wbs_code} {data.task.name}</h3>
       <p>{data.task.description ?? '無說明'}</p>

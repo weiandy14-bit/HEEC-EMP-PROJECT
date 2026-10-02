@@ -46,6 +46,7 @@ export function GanttPage() {
   const reqId = useRef(0);
   const [options, setOptions] = useState<GanttOptions>({ projects: [], pms: [], resources: [], disciplines: [] });
   const [optionsError, setOptionsError] = useState('');
+  const returnFocus = useRef<HTMLElement | null>(null);
   const [selected, setSelected] = useState<{ projectId: string; taskId: string } | null>(null);
   useEffect(() => {
     let alive = true;
@@ -108,20 +109,20 @@ export function GanttPage() {
             <div className="row timeline-header" data-testid="timeline-header">
               <div className="name-col">案件／WBS · 計畫／Baseline／實際</div>
               <div className="lane">{ticks.map((tick) => <span key={tick.time} className="timeline-tick"
-                style={{ left: `${pct(tick.time)}%` }}>{tick.label}</span>)}</div>
+                style={{ left: `${Math.max(0, pct(tick.time) ?? 0)}%` }} title={tick.label}>{filters.zoom === 'day' ? tick.label.slice(5) : tick.label}</span>)}</div>
             </div>
             {todayLeft != null && todayLeft >= 0 && todayLeft <= 100 && (
               <div className="today-line" data-testid="today-line" style={{ left: `calc(var(--name-col) + (100% - var(--name-col)) * ${todayLeft / 100})` }} aria-hidden="true" />
             )}
             {projects.map((p) => (
               <ProjectRows
-                key={p.id} project={p} collapsed={collapsed} onToggle={toggle} pct={pct} onTask={(taskId) => setSelected({ projectId: p.id, taskId })}
+                key={p.id} project={p} collapsed={collapsed} onToggle={toggle} pct={pct} onTask={(taskId, trigger) => { returnFocus.current = trigger; setSelected({ projectId: p.id, taskId }); }}
               />
             ))}
           </div>
         </div>
       </div>
-      {selected && <TaskDetailPanel projectId={selected.projectId} taskId={selected.taskId} onClose={() => setSelected(null)} />}
+      {selected && <TaskDetailPanel projectId={selected.projectId} taskId={selected.taskId} onClose={() => { setSelected(null); setTimeout(() => { if (returnFocus.current?.isConnected) returnFocus.current.focus(); }, 0); }} />}
       {nextCursor && (
         <div className="load-more" data-testid="large-volume">
           <button type="button" onClick={() => load(false, nextCursor)}>載入更多案件</button>
@@ -171,7 +172,7 @@ function Shell(props: {
 }
 
 function ProjectRows({ project, collapsed, onToggle, pct, onTask }: {
-  onTask: (taskId: string) => void; project: GanttProject; collapsed: Set<string>; onToggle: (id: string) => void; pct: (t: number | null) => number | null;
+  onTask: (taskId: string, trigger: HTMLElement) => void; project: GanttProject; collapsed: Set<string>; onToggle: (id: string) => void; pct: (t: number | null) => number | null;
 }) {
   const childrenOf = useMemo(() => {
     const m = new Map<string | null, GanttTask[]>();
@@ -203,7 +204,7 @@ function ProjectRows({ project, collapsed, onToggle, pct, onTask }: {
           {project.error && <span className="placeholder" data-testid="project-placeholder">資料暫缺</span>}
           {project.milestones.map((m) => {
             const left = pct(Date.parse(m.date));
-            return left == null ? null : (
+            return left == null || left < 0 || left > 100 ? null : (
               <span key={`${m.kind}-${m.id}`} className={`milestone ms-${m.kind}`} data-testid="milestone"
                 data-kind={m.kind} title={`${m.name}（${m.date}）`} style={{ left: `${left}%` }}>◆</span>
             );
@@ -222,7 +223,7 @@ function ProjectRows({ project, collapsed, onToggle, pct, onTask }: {
                   {collapsed.has(task.id) ? '▸' : '▾'}
                 </button>
               ) : <span className="twisty-spacer" />}
-              <span className="wbs">{task.wbs_code}</span> <button className="task-link" type="button" onClick={() => onTask(task.id)}>{task.name}</button>
+              <span className="wbs">{task.wbs_code}</span> <button className="task-link" type="button" onClick={(e) => onTask(task.id, e.currentTarget)}>{task.name}</button>
               <span className="task-status" data-testid="task-status">{statusLabel(task.status)}</span>
             </div>
             <div className="lane">
@@ -264,8 +265,10 @@ function Bar({ kind, bar, pct }: { kind: string; bar: { start: string | null; fi
   const l = pct(bar.start ? Date.parse(bar.start) : null);
   const r = pct(bar.finish ? Date.parse(bar.finish) : null);
   if (l == null || r == null) return null;
-  const width = Math.max(0.5, r - l);
-  return <div className={`bar bar-${kind}`} data-testid={`bar-${kind}`} data-kind={kind} style={{ left: `${l}%`, width: `${width}%` }} />;
+  if (r < 0 || l > 100) return null;
+  const left = Math.max(0, l);
+  const width = Math.min(100 - left, Math.max(0.5, Math.min(100, r) - left));
+  return <div className={`bar bar-${kind}`} data-testid={`bar-${kind}`} data-kind={kind} style={{ left: `${left}%`, width: `${width}%` }} />;
 }
 
 function statusLabel(s: string): string {

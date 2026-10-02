@@ -16,7 +16,7 @@ export function timelineTicks(min: number, max: number, zoom: Zoom) {
   for (let i = 0; i < 10000; i++) {
     const time = wall.getTime() - OFFSET;
     if (time >= max) break;
-    if (time >= min) ticks.push({ time, label: wall.toISOString().slice(0, zoom === 'month' ? 7 : 10) });
+    ticks.push({ time, label: wall.toISOString().slice(0, zoom === 'month' ? 7 : 10) });
     if (zoom === 'month') wall.setUTCMonth(wall.getUTCMonth() + 1);
     else wall.setUTCDate(wall.getUTCDate() + (zoom === 'week' ? 7 : 1));
   }

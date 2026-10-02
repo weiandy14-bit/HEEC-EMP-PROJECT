@@ -43,6 +43,8 @@ export interface GanttProject {
   health: string;
   permit_filing_date: string | null;
   pm_user_id: string | null;
+  task_next_cursor?: string | null;
+  task_count_remaining?: number;
   tasks: GanttTask[];
   dependencies: GanttDependency[];
   milestones: GanttMilestone[];

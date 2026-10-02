@@ -73,6 +73,17 @@ export class GanttService {
     if (q.from && q.to && Date.parse(q.to) - Date.parse(q.from) > 3660 * 86400000) {
       throw DomainError.validation('查詢範圍最多十年，請縮小日期區間');
     }
+    const taskLimit = q.task_limit ?? 200;
+    let taskAfter: [string,string] | null = null;
+    if (q.task_cursor) {
+      if (!q.project_id) throw DomainError.validation('工作游標須指定案件');
+      try {
+        const value: unknown = JSON.parse(Buffer.from(q.task_cursor,'base64url').toString('utf8'));
+        if (!Array.isArray(value) || value.length !== 2 || typeof value[0] !== 'string'
+          || typeof value[1] !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value[1])) throw new Error('cursor');
+        taskAfter = [value[0],value[1]];
+      } catch { throw DomainError.validation('工作游標無效，請重新載入案件'); }
+    }
     const zoom = q.zoom ?? 'week';
     const status = this.resolveStatus(q.status);
     const limit = q.limit ?? 50;
@@ -126,23 +137,42 @@ export class GanttService {
         return '(' + conditions.join(' AND ') + ')';
       }).join(' OR ') + ')';
     }
+    if (taskAfter) {
+      tParams.push(taskAfter[0],taskAfter[1]);
+      where += ` AND (t.sort_key,t.id) > ($${tParams.length-1},$${tParams.length}::uuid)`;
+    }
+    tParams.push(taskLimit);
+    const limitParam = tParams.length;
     const tasks = await this.db.query<any>(`
-      WITH RECURSIVE visible(project_id,id,parent_task_id) AS (
-        SELECT t.project_id,t.id,t.parent_task_id FROM v_gantt_task t WHERE ${where}
+      WITH RECURSIVE candidates AS (
+        SELECT t.project_id,t.id,t.parent_task_id,t.sort_key,
+          row_number() OVER (PARTITION BY t.project_id ORDER BY t.sort_key,t.id) AS rn
+        FROM v_gantt_task t WHERE ${where}
+      ), page_meta AS (
+        SELECT project_id,count(*) AS remaining_count,
+          max(sort_key) FILTER (WHERE rn=$${limitParam}) AS last_sort,
+          max(id::text) FILTER (WHERE rn=$${limitParam}) AS last_id
+        FROM candidates GROUP BY project_id
+      ), visible(project_id,id,parent_task_id) AS (
+        SELECT project_id,id,parent_task_id FROM candidates WHERE rn <= $${limitParam}
         UNION
         SELECT t.project_id,t.id,t.parent_task_id FROM v_gantt_task t
         JOIN visible v ON t.project_id=v.project_id AND t.id=v.parent_task_id
         WHERE t.org_id=$1 AND t.project_id=ANY($2)
       )
-      SELECT t.* FROM v_gantt_task t JOIN visible v ON t.project_id=v.project_id AND t.id=v.id
+      SELECT t.*,m.remaining_count,m.last_sort,m.last_id FROM v_gantt_task t
+      JOIN visible v ON t.project_id=v.project_id AND t.id=v.id
+      JOIN page_meta m ON m.project_id=t.project_id
       WHERE t.org_id=$1 ORDER BY t.project_id,t.sort_key,t.id`, tParams);
+    const taskIds = tasks.map((t)=>t.id);
 
     // 3) 相依（批次）
     const deps = await this.db.query<any>(
       `SELECT project_id, id, predecessor_task_id, successor_task_id, relation, lag_minutes
          FROM task_dependencies
-        WHERE org_id = $1 AND project_id = ANY($2) AND archived_at IS NULL`,
-      [ctx.orgId, ids],
+        WHERE org_id = $1 AND project_id = ANY($2) AND archived_at IS NULL
+          AND (predecessor_task_id=ANY($3::uuid[]) OR successor_task_id=ANY($3::uuid[]))`,
+      [ctx.orgId, ids, taskIds],
     );
 
     // 4) 里程碑：掛件(每案唯一 permit_filing) + 法定審查期限(review_due，獨立)
@@ -164,6 +194,8 @@ export class GanttService {
       byProject.set(p.id, {
         id: p.id, code: p.code, name: p.name, status: p.status, health: p.health,
         permit_filing_date: p.permit_filing_date, pm_user_id: p.pm_user_id,
+        task_next_cursor: null,
+        task_count_remaining: 0,
         tasks: [] as GanttTask[], dependencies: [] as GanttDependency[], milestones: [] as GanttMilestone[],
       });
       // 掛件里程碑：每案唯一，取 permit_filing_date（可空則不產生）
@@ -174,6 +206,10 @@ export class GanttService {
       }
     }
     for (const t of tasks) {
+      const project = byProject.get(t.project_id);
+      project.task_count_remaining = Math.max(0, Number(t.remaining_count)-taskLimit);
+      project.task_next_cursor = Number(t.remaining_count) > taskLimit
+        ? Buffer.from(JSON.stringify([t.last_sort,t.last_id])).toString('base64url') : null;
       byProject.get(t.project_id)?.tasks.push({
         id: t.id, parent_id: t.parent_task_id, wbs_code: t.wbs_code, sort_key: t.sort_key,
         name: t.name, discipline_id: t.discipline_id, owner_user_id: t.owner_user_id,

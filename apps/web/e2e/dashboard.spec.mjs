@@ -95,3 +95,21 @@ for (const [nav, path, empty] of [
     await expect(page.getByTestId('state-error')).toHaveCount(0);
   });
 }
+
+test('5000-task Gantt bounds mounted rows and reaches the final task by native scrolling', async({page})=>{
+ await page.route('**/api/v1/**',route=>route.fulfill({json:route.request().url().includes('/options')
+  ? {projects:[],pms:[],resources:[],disciplines:[]}
+  : {...gantt,projects:[{...gantt.projects[0],dependencies:[],tasks:Array.from({length:5000},(_,i)=>task(String(i).padStart(5,'0')))}]}}));
+ await page.goto('/');
+ await expect(page.getByTestId('task-row').first()).toBeVisible();
+ expect(await page.getByTestId('task-row').count()).toBeLessThan(60);
+ await page.getByTestId('timeline-scroll').evaluate(el=>{el.scrollTop=el.scrollHeight;});
+ await expect(page.getByRole('button',{name:'工作 04999',exact:true})).toBeVisible();
+ expect(await page.getByTestId('task-row').count()).toBeLessThan(60);
+ await page.getByTestId('timeline-scroll').evaluate(el=>{el.scrollTop=0;});
+ await expect(page.getByRole('button',{name:'工作 00000',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'收合 案件 測試案',exact:true}).click();
+ await expect(page.getByTestId('task-row')).toHaveCount(0);
+ await page.getByRole('button',{name:'展開 案件 測試案',exact:true}).click();
+ await expect(page.getByRole('button',{name:'工作 00000',exact:true})).toBeVisible();
+});

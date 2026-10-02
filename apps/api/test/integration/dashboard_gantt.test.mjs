@@ -213,3 +213,24 @@ test('P4-A6 name options and task detail retain project scope; cross-project tas
 });
 
 test.after(async () => { await closeDb(); });
+
+test('P4-A5 task keyset pages reach all 501 tasks and retain hierarchy without losing UUIDs', async()=>{
+ const a=await activeProjectWithTasks();
+ await db().query(`UPDATE project_tasks SET sort_key='00000' WHERE id=$1`,[a.parent.id]);
+ await db().query(`UPDATE project_tasks SET sort_key='00001' WHERE id=$1`,[a.child.id]);
+ await db().query(`INSERT INTO project_tasks(org_id,project_id,wbs_code,sort_key,name,parent_task_id)
+ SELECT $1,$2,'P.'||gs,lpad((gs+1)::text,5,'0'),'Paging '||gs,$3 FROM generate_series(1,499) gs`,[ORG,a.p,a.parent.id]);
+ const seen=new Set(); let cursor=null; let pages=0;
+ do {
+  const r=await api('GET',`/dashboard/gantt?project_id=${a.p}&task_limit=200${cursor?'&task_cursor='+encodeURIComponent(cursor):''}`);
+  assert.equal(r.status,200,JSON.stringify(r.body));
+  const p=r.body.projects[0];
+  assert.ok(p.tasks.some(t=>t.id===a.parent.id),'ancestor retained on every page');
+  assert.ok(p.tasks.length<=201,'200 candidates plus ancestor');
+  p.tasks.forEach(t=>seen.add(t.id)); cursor=p.task_next_cursor; pages++;
+  assert.ok(pages<=4,'cursor progresses');
+ }while(cursor);
+ assert.equal(seen.size,501); assert.equal(pages,3);
+ assert.equal((await api('GET',`/dashboard/gantt?project_id=${a.p}&task_cursor=invalid`)).status,422);
+ assert.equal((await api('GET','/dashboard/gantt?task_cursor=invalid')).status,422);
+});

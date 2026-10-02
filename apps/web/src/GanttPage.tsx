@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchGantt, fetchGanttOptions } from './api';
-import type { GanttProject, GanttTask, GanttFilters, GanttOptions, Zoom } from './types';
+import type { GanttProject, GanttFilters, GanttOptions, Zoom } from './types';
 import { LoadingState, EmptyState, ErrorState, NoPermissionState, PartialBanner } from './components/States';
 
 const VIEW_KEY = 'gantt.view.v1';
 const DEFAULT_FILTERS: GanttFilters = { zoom: 'week' };
 import { timelineDomain, timelineTicks } from './timeline';
+import { layoutProjects, virtualWindow, ROW_HEIGHT, type ProjectLayout } from './gantt-layout';
 import { TaskDetailPanel } from './TaskDetailPanel';
 const UNIT_PX: Record<Zoom, number> = { day: 40, week: 24, month: 6 };
 
@@ -46,6 +47,10 @@ export function GanttPage() {
   const reqId = useRef(0);
   const [options, setOptions] = useState<GanttOptions>({ projects: [], pms: [], resources: [], disciplines: [] });
   const [optionsError, setOptionsError] = useState('');
+  const [pagingError, setPagingError] = useState('');
+  const [paging, setPaging] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState({top:0,height:600});
   const returnFocus = useRef<HTMLElement | null>(null);
   const [selected, setSelected] = useState<{ projectId: string; taskId: string } | null>(null);
   useEffect(() => {
@@ -60,20 +65,24 @@ export function GanttPage() {
 
   const load = useCallback(async (reset: boolean, cursor?: string) => {
     const myReq = ++reqId.current;
-    if (reset) setPhase('loading');
+    if (reset) { setPhase('loading'); setPagingError(''); }
+    else setPaging(true);
     try {
       const r = await fetchGantt({ ...filters, cursor, limit: 50, status: filters.status ?? 'in_progress' });
       if (myReq !== reqId.current) return; // 丟棄過期請求
       if (r.status === 403) { setPhase('forbidden'); return; }
-      if (r.status >= 400 || !r.body) { setPhase('error'); setErrMsg(`HTTP ${r.status}`); return; }
+      if (r.status >= 400 || !r.body) { if (!reset) setPagingError(`案件載入失敗 HTTP ${r.status}`); else { setPhase('error'); setErrMsg(`HTTP ${r.status}`); } return; }
       const incoming = r.body.projects ?? [];
+      if (reset) setViewport((v) => ({...v,top:0}));
       setProjects((prev) => (reset ? incoming : [...prev, ...incoming]));
       setNextCursor(r.body.next_cursor);
       setPhase((reset ? incoming : [...projects, ...incoming]).length === 0 ? 'empty' : 'ok');
     } catch (e) {
       if (myReq !== reqId.current) return;
-      setPhase('error'); setErrMsg(e instanceof Error ? e.message : '網路錯誤');
+      if (!reset) setPagingError(e instanceof Error ? e.message : '網路錯誤');
+      else { setPhase('error'); setErrMsg(e instanceof Error ? e.message : '網路錯誤'); }
     }
+    finally { if (myReq === reqId.current) setPaging(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
 
@@ -87,6 +96,35 @@ export function GanttPage() {
   const toggle = (id: string) =>
     setCollapsed((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
+  const loadTasks = async (project: GanttProject) => {
+    if (!project.task_next_cursor || paging) return;
+    const requestVersion = reqId.current;
+    setPaging(true); setPagingError('');
+    try {
+      const r = await fetchGantt({...filters,project_id:project.id,task_cursor:project.task_next_cursor,limit:1});
+      if (requestVersion !== reqId.current) return;
+      if (r.status !== 200 || !r.body?.projects[0]) throw new Error(`工作載入失敗 HTTP ${r.status}`);
+      const incoming = r.body.projects[0];
+      setProjects((prev)=>prev.map((p)=>p.id !== project.id ? p : {
+        ...p, task_next_cursor:incoming.task_next_cursor, task_count_remaining:incoming.task_count_remaining,
+        tasks:[...new Map([...p.tasks,...incoming.tasks].map((t)=>[t.id,t])).values()].sort((a,b)=>a.sort_key.localeCompare(b.sort_key)||a.id.localeCompare(b.id)),
+        dependencies:[...new Map([...p.dependencies,...incoming.dependencies].map((d)=>[d.id,d])).values()],
+      }));
+    } catch (e) { if (requestVersion===reqId.current) setPagingError(e instanceof Error ? e.message : '工作載入失敗'); }
+    finally { if (requestVersion===reqId.current) setPaging(false); }
+  };
+
+  const layouts = useMemo(() => layoutProjects(projects,collapsed), [projects,collapsed]);
+  const window = virtualWindow(layouts,viewport.top,viewport.height);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = () => setViewport((v)=>({...v,height:el.clientHeight || 600,top:el.scrollTop}));
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure); observer.observe(el);
+    return () => observer.disconnect();
+  }, [phase]);
   const domain = useDomain(projects, filters.from, filters.to);
   const ticks = timelineTicks(domain.min, domain.max, filters.zoom);
   const pct = (t: number | null) => (t == null ? null : ((t - domain.min) / domain.span) * 100);
@@ -104,7 +142,8 @@ export function GanttPage() {
     <Shell options={options} optionsError={optionsError} filters={filters} onZoom={setZoom} onFilter={update}>
       {failed.length > 0 && <PartialBanner failedCount={failed.length} />}
       <div className="gantt" data-testid="gantt" data-zoom={filters.zoom}>
-        <div className="gantt-scroll" data-testid="timeline-scroll">
+        <div className="gantt-scroll" data-testid="timeline-scroll" ref={scrollRef} tabIndex={0} aria-label="甘特時間軸，使用上下鍵與 Page Down 捲動"
+          onScroll={(e)=>setViewport({top:e.currentTarget.scrollTop,height:e.currentTarget.clientHeight || 600})}>
           <div className="gantt-body" style={{ minWidth: timelineWidth }}>
             <div className="row timeline-header" data-testid="timeline-header">
               <div className="name-col">案件／WBS · 計畫／Baseline／實際</div>
@@ -114,18 +153,27 @@ export function GanttPage() {
             {todayLeft != null && todayLeft >= 0 && todayLeft <= 100 && (
               <div className="today-line" data-testid="today-line" style={{ left: `calc(var(--name-col) + (100% - var(--name-col)) * ${todayLeft / 100})` }} aria-hidden="true" />
             )}
-            {projects.map((p) => (
-              <ProjectRows
-                key={p.id} project={p} collapsed={collapsed} onToggle={toggle} pct={pct} onTask={(taskId, trigger) => { returnFocus.current = trigger; setSelected({ projectId: p.id, taskId }); }}
-              />
+            <div aria-hidden="true" style={{height:window.before}} />
+            {window.visible.map(({layout,start,end}) => (
+              <ProjectRows key={layout.project.id} layout={layout} start={start} end={end}
+                collapsed={collapsed} onToggle={toggle} pct={pct}
+                onTask={(taskId, trigger) => { returnFocus.current = trigger; setSelected({ projectId: layout.project.id, taskId }); }} />
             ))}
+            <div aria-hidden="true" style={{height:window.after}} />
           </div>
         </div>
+      </div>
+      <div className="gantt-paging" aria-live="polite">已載入 {projects.length} 案、{projects.reduce((sum,p)=>sum+p.tasks.length,0)} 項工作；僅渲染目前可見範圍。</div>
+      <div className="gantt-paging" aria-label="尚未載入的工作">
+        {projects.filter((p)=>p.task_next_cursor).map((p)=><button type="button" disabled={paging} key={p.id} onClick={()=>void loadTasks(p)}>
+          載入 {p.code} 更多工作（尚餘 {p.task_count_remaining ?? '—'} 筆候選）
+        </button>)}
+        {pagingError && <span role="alert">{pagingError}；請按載入按鈕重試。</span>}
       </div>
       {selected && <TaskDetailPanel projectId={selected.projectId} taskId={selected.taskId} onClose={() => { setSelected(null); setTimeout(() => { if (returnFocus.current?.isConnected) returnFocus.current.focus(); }, 0); }} />}
       {nextCursor && (
         <div className="load-more" data-testid="large-volume">
-          <button type="button" onClick={() => load(false, nextCursor)}>載入更多案件</button>
+          <button type="button" disabled={paging} onClick={() => load(false, nextCursor)}>載入更多案件</button>
         </div>
       )}
     </Shell>
@@ -171,32 +219,19 @@ function Shell(props: {
   );
 }
 
-function ProjectRows({ project, collapsed, onToggle, pct, onTask }: {
-  onTask: (taskId: string, trigger: HTMLElement) => void; project: GanttProject; collapsed: Set<string>; onToggle: (id: string) => void; pct: (t: number | null) => number | null;
+function ProjectRows({ layout, start, end, collapsed, onToggle, pct, onTask }: {
+  layout: ProjectLayout; start: number; end: number;
+  onTask: (taskId: string, trigger: HTMLElement) => void; collapsed: Set<string>; onToggle: (id: string) => void; pct: (t: number | null) => number | null;
 }) {
-  const childrenOf = useMemo(() => {
-    const m = new Map<string | null, GanttTask[]>();
-    for (const t of project.tasks) {
-      const k = t.parent_id;
-      if (!m.has(k)) m.set(k, []);
-      m.get(k)!.push(t);
-    }
-    return m;
-  }, [project.tasks]);
-
-  const rows: { task: GanttTask; depth: number }[] = [];
-  const walk = (parent: string | null, depth: number) => {
-    for (const t of childrenOf.get(parent) ?? []) {
-      rows.push({ task: t, depth });
-      if (!collapsed.has(t.id)) walk(t.id, depth + 1);
-    }
-  };
-  walk(null, 0);
+  const {project,rows,indices} = layout;
 
   return (
     <section className="project-group" data-testid="project" data-project-id={project.id} aria-label={`案件 ${project.name}`}>
       <div className="row project-header" data-testid="project-row">
         <div className="name-col" data-testid="name-col">
+          <button type="button" className="twisty" aria-label={`${collapsed.has(`project:${project.id}`) ? '展開' : '收合'} 案件 ${project.name}`}
+            aria-expanded={!collapsed.has(`project:${project.id}`)} onClick={()=>onToggle(`project:${project.id}`)}>
+            {collapsed.has(`project:${project.id}`) ? '▸' : '▾'}</button>
           <span className="proj-code">{project.code}</span> {project.name}
           <span className={`health health-${project.health}`}>{project.health}</span>
         </div>
@@ -211,12 +246,12 @@ function ProjectRows({ project, collapsed, onToggle, pct, onTask }: {
           })}
         </div>
       </div>
-      {rows.map(({ task, depth }) => {
-        const hasChildren = (childrenOf.get(task.id) ?? []).length > 0;
+      <div aria-hidden="true" style={{height:start*ROW_HEIGHT}} />
+      {rows.slice(start,end).map(({ task, depth, hasChildren }) => {
         return (
           <div className={`row task-row${task.critical ? ' critical' : ''}`} key={task.id}
             data-testid="task-row" data-task-id={task.id} data-critical={task.critical}>
-            <div className="name-col" style={{ paddingInlineStart: 12 + depth * 16 }}>
+            <div className="name-col" style={{ paddingInlineStart: 12 + Math.min(depth,12) * 16 }}>
               {hasChildren ? (
                 <button type="button" className="twisty" aria-expanded={!collapsed.has(task.id)}
                   aria-label={`${collapsed.has(task.id) ? '展開' : '收合'} ${task.name}`} data-testid={`toggle-${task.id}`} onClick={() => onToggle(task.id)}>
@@ -234,20 +269,21 @@ function ProjectRows({ project, collapsed, onToggle, pct, onTask }: {
           </div>
         );
       })}
+      <div aria-hidden="true" style={{height:(rows.length-end)*ROW_HEIGHT}} />
       <svg className="dependency-overlay" viewBox={`0 0 1000 ${(rows.length + 1) * 30}`}
         preserveAspectRatio="none" role="img" aria-label={`${project.name} 工作相依關係`}>
         <defs><marker id={`arrow-${project.id}`} markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
           <path d="M0,0 L6,3 L0,6 Z" fill="currentColor" />
         </marker></defs>
         {project.dependencies.map((dep) => {
-          const predIndex = rows.findIndex((r) => r.task.id === dep.predecessor_id);
-          const succIndex = rows.findIndex((r) => r.task.id === dep.successor_id);
-          if (predIndex < 0 || succIndex < 0) return null;
+          const predIndex = indices.get(dep.predecessor_id) ?? -1;
+          const succIndex = indices.get(dep.successor_id) ?? -1;
+          if (predIndex < start || succIndex < start || predIndex >= end || succIndex >= end) return null;
           const pred = rows[predIndex].task, succ = rows[succIndex].task;
-          const start = pct(d(dep.relation[0] === 'F' ? pred.planned.finish : pred.planned.start));
+          const startPct = pct(d(dep.relation[0] === 'F' ? pred.planned.finish : pred.planned.start));
           const finish = pct(d(dep.relation[1] === 'F' ? succ.planned.finish : succ.planned.start));
-          if (start == null || finish == null) return null;
-          const x1 = start * 10, x2 = finish * 10;
+          if (startPct == null || finish == null) return null;
+          const x1 = startPct * 10, x2 = finish * 10;
           const y1 = (predIndex + 1) * 30 + 15, y2 = (succIndex + 1) * 30 + 15;
           const elbow = Math.max(x1, x2) + 8;
           return <path key={dep.id} className="dep-line" data-testid="dep-line"

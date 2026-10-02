@@ -149,3 +149,6 @@ table.days thead th { background: var(--panel); color: var(--muted); }
 .task-detail::backdrop { background: #0f172a80; }
 .task-detail header { display: flex; justify-content: space-between; align-items: center; }
 .task-detail dt { font-weight: 600; }.task-detail dd { margin: 0 0 12px; }
+
+.gantt-paging { display:flex; flex-wrap:wrap; gap:6px; padding:4px 12px; flex-shrink:0; }
+.gantt-paging[aria-label] { max-height:80px; overflow:auto; }

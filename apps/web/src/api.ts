@@ -21,6 +21,8 @@ function devHeaders(): Record<string, string> {
 }
 
 export interface GanttQuery extends GanttFilters {
+  task_cursor?: string;
+  task_limit?: number;
   cursor?: string;
   limit?: number;
   status?: string;
@@ -36,6 +38,8 @@ export async function fetchGantt(q: GanttQuery): Promise<ApiResult<GanttResponse
   if (q.to) qs.set('to', new Date(Date.parse(`${q.to}T00:00:00+08:00`) + 86400000).toISOString());
   if (q.pm_id) qs.set('pm_id', q.pm_id);
   if (q.discipline) qs.set('discipline', q.discipline);
+  if (q.task_cursor) qs.set('task_cursor', q.task_cursor);
+  if (q.task_limit) qs.set('task_limit', String(q.task_limit));
   if (q.cursor) qs.set('cursor', q.cursor);
   if (q.limit) qs.set('limit', String(q.limit));
   const res = await fetch(`/api/v1/dashboard/gantt?${qs.toString()}`, {

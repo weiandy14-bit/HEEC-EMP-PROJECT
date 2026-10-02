@@ -208,3 +208,20 @@ describe('P4-U 六種 UI 狀態', () => {
     expect(screen.getByText('第一頁')).toBeInTheDocument();
   });
 });
+
+it('task paging preserves existing rows on failure, retries, and deduplicates ancestors', async()=>{
+ const parent=task({id:'root',name:'既有工作'});
+ const p=project({id:'p1',code:'P1',tasks:[parent],task_next_cursor:'next',task_count_remaining:1});
+ fetchGantt.mockReturnValueOnce(ok(resp([p])));
+ render(<GanttPage/>);
+ await screen.findByText('既有工作');
+ fetchGantt.mockRejectedValueOnce(new Error('分頁失敗'));
+ fireEvent.click(screen.getByRole('button',{name:/載入 P1 更多工作/}));
+ expect(await screen.findByRole('alert')).toHaveTextContent('分頁失敗');
+ expect(screen.getByText('既有工作')).toBeInTheDocument();
+ fetchGantt.mockReturnValueOnce(ok(resp([{...p,tasks:[parent,task({id:'next',name:'新增工作',parent_id:'root'})],task_next_cursor:null}])));
+ fireEvent.click(screen.getByRole('button',{name:/載入 P1 更多工作/}));
+ await screen.findByText('新增工作');
+ expect(screen.getAllByText('既有工作')).toHaveLength(1);
+ expect(fetchGantt).toHaveBeenLastCalledWith(expect.objectContaining({project_id:'p1',task_cursor:'next'}));
+});

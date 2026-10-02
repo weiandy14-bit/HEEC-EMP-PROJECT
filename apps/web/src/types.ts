@@ -75,6 +75,14 @@ export interface WorkloadSource {
   booking_type: string;
 }
 
+export interface WorkloadDay {
+  date: string;
+  capacity_minutes: number;
+  demand_minutes: number;
+  load_rate: number | null;
+  flags: LoadFlag[];
+}
+
 export interface WorkloadCell {
   week: string;
   demand_minutes: number;
@@ -82,6 +90,7 @@ export interface WorkloadCell {
   load_rate: number | null;
   flags: LoadFlag[];
   sources: WorkloadSource[];
+  days?: WorkloadDay[]; // 僅 drill-down 回傳
 }
 
 export interface WorkloadResource {

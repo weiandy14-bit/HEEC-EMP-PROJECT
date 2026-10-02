@@ -3,7 +3,11 @@ import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-li
 import type { WorkloadResponse, WorkloadResource, WorkloadCell } from '../types';
 
 const fetchWorkload = vi.fn();
-vi.mock('../api', () => ({ fetchWorkload: (...a: unknown[]) => fetchWorkload(...a) }));
+const fetchWorkloadResource = vi.fn();
+vi.mock('../api', () => ({
+  fetchWorkload: (...a: unknown[]) => fetchWorkload(...a),
+  fetchWorkloadResource: (...a: unknown[]) => fetchWorkloadResource(...a),
+}));
 
 import { WorkloadPage, loadBand } from '../WorkloadPage';
 
@@ -21,7 +25,13 @@ function resp(over: Partial<WorkloadResponse> = {}): WorkloadResponse {
 }
 const ok = (body: WorkloadResponse) => Promise.resolve({ status: 200, body });
 
-beforeEach(() => { fetchWorkload.mockReset(); localStorage.clear(); cleanup(); });
+beforeEach(() => {
+  fetchWorkload.mockReset();
+  fetchWorkloadResource.mockReset();
+  fetchWorkloadResource.mockResolvedValue({ status: 200, body: null }); // 預設：不提供每日明細
+  localStorage.clear();
+  cleanup();
+});
 
 describe('loadBand 分級門檻', () => {
   it('0–80% 正常、>80–100% 偏高、>100% 超載、零容量', () => {
@@ -78,6 +88,27 @@ describe('P4-C 工程師負荷 UI', () => {
     expect(await screen.findByTestId('cell-sources')).toBeInTheDocument();
     expect(screen.getByTestId('source-row')).toBeInTheDocument();
     expect(screen.getByTestId('tag-cover')).toBeInTheDocument();
+  });
+
+  it('C drill-down 每日明細：展開格時載入並顯示逐日列', async () => {
+    const r = resource();
+    fetchWorkload.mockReturnValue(ok(resp({ resources: [r] })));
+    const detail = {
+      ...r,
+      cells: r.cells.map((c, i) => (i === 0
+        ? { ...c, days: [
+            { date: '2027-03-15', capacity_minutes: 480, demand_minutes: 480, load_rate: 1, flags: [] },
+            { date: '2027-03-16', capacity_minutes: 480, demand_minutes: 0, load_rate: 0, flags: [] },
+          ] }
+        : c)),
+    };
+    fetchWorkloadResource.mockReturnValue(Promise.resolve({ status: 200, body: detail }));
+    render(<WorkloadPage />);
+    await screen.findByTestId('workload');
+    fireEvent.click(screen.getByTestId(`cell-${r.resource_id}:0`));
+    expect(await screen.findByTestId('cell-days')).toBeInTheDocument();
+    expect(screen.getAllByTestId('day-row')).toHaveLength(2);
+    expect(fetchWorkloadResource).toHaveBeenCalledWith(r.resource_id, expect.any(Object));
   });
 
   it('C6 未指派清單', async () => {

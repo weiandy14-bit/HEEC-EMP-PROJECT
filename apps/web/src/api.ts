@@ -1,4 +1,4 @@
-import type { GanttResponse, GanttFilters, WorkloadResponse, WorkloadFilters, WeeklyBoardResponse, WeeklyBoardFilters } from './types';
+import type { GanttResponse, GanttFilters, WorkloadResponse, WorkloadResource, WorkloadFilters, WeeklyBoardResponse, WeeklyBoardFilters } from './types';
 
 export interface ApiResult<T> {
   status: number;
@@ -51,6 +51,15 @@ export async function fetchWorkload(q: WorkloadFilters & { weeks?: number }): Pr
   const res = await fetch(`/api/v1/dashboard/workload?${qs.toString()}`, { headers: { ...devHeaders() } });
   let body: WorkloadResponse | null = null;
   try { body = (await res.json()) as WorkloadResponse; } catch { body = null; }
+  return { status: res.status, body };
+}
+
+export async function fetchWorkloadResource(resourceId: string, q: { from_week?: string }): Promise<ApiResult<WorkloadResource>> {
+  const qs = new URLSearchParams();
+  if (q.from_week) qs.set('from_week', q.from_week);
+  const res = await fetch(`/api/v1/dashboard/workload/resources/${resourceId}?${qs.toString()}`, { headers: { ...devHeaders() } });
+  let body: WorkloadResource | null = null;
+  try { body = (await res.json()) as WorkloadResource; } catch { body = null; }
   return { status: res.status, body };
 }
 

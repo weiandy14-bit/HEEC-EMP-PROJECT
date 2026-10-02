@@ -166,4 +166,21 @@ test('P4-C RBAC：Viewer 可讀負荷(唯讀)', async () => {
   assert.equal(r.status, 200);
 });
 
+test('P4-C drill-down 每日明細：週內逐日容量/需求', async () => {
+  const p = await createProject();
+  const t = await makeTask(p);
+  const res = await makeResource();
+  // 僅週一 09:00–18:00 指派 8h
+  await assign(p, t, res, { work: 480, start: iso(W0 + 9 * H), finish: iso(W0 + 18 * H) });
+  const d = await api('GET', `/dashboard/workload/resources/${res}?from_week=${FROM}`);
+  assert.equal(d.status, 200);
+  const days = d.body.cells[0].days;
+  assert.ok(Array.isArray(days) && days.length === 5, '週一至五各一日（週末略過）');
+  const mon = days[0];
+  assert.equal(mon.capacity_minutes, 480);
+  assert.equal(mon.demand_minutes, 480);
+  assert.equal(days[1].demand_minutes, 0, '週二無需求');
+  assert.equal(days[1].capacity_minutes, 480, '週二仍有容量');
+});
+
 test.after(async () => { await closeDb(); });

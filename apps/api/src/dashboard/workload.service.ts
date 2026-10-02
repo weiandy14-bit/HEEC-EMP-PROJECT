@@ -248,14 +248,74 @@ export class WorkloadService {
     }));
   }
 
-  /** 單一工程師 drill-down（跨 org → 404）：每日容量/需求、假期、來源。 */
+  /** 單一工程師 drill-down（跨 org → 404）：每週每日容量/需求、假期、衝突、來源。 */
   async resourceDetail(ctx: UserContext, resourceId: string, q: WorkloadQueryDto) {
     const r = await this.db.queryOne<any>(
       `SELECT id, name, max_units, team_id, active_from, active_to
          FROM resources WHERE org_id = $1 AND id = $2 AND type = 'labor' AND archived_at IS NULL`,
       [ctx.orgId, resourceId]);
     if (!r) throw DomainError.notFound('工程師');
-    const full = await this.matrix(ctx, { ...q, resource_id: resourceId } as WorkloadQueryDto);
-    return full.resources[0] ?? null;
+    const base = (await this.matrix(ctx, { ...q, resource_id: resourceId } as WorkloadQueryDto)).resources[0];
+    if (!base) return null;
+
+    // 附加每日明細（重算資源日曆與指派一次）
+    this.calCache.clear();
+    const weeks = this.weeks(q);
+    const fallback = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM calendars WHERE org_id = $1 AND status = 'active' ORDER BY created_at LIMIT 1`, [ctx.orgId]);
+    const calId = await this.resolveCalendarId(ctx.orgId, r.id, fallback?.id ?? null);
+    const cal = calId ? await this.loadCalendar(calId) : null;
+    const maxUnits = Number(r.max_units);
+    const assignments = await this.db.query<Assignment>(
+      `SELECT a.id, a.project_id, a.task_id, a.resource_id, a.assignment_units,
+              a.planned_work_minutes, a.assignment_start, a.assignment_finish, a.booking_type
+         FROM resource_assignments a
+        WHERE a.org_id = $1 AND a.resource_id = $2 AND a.archived_at IS NULL
+          AND a.booking_type IN ('committed','cover')
+          AND a.assignment_start IS NOT NULL AND a.assignment_finish IS NOT NULL`,
+      [ctx.orgId, r.id]);
+
+    base.cells = base.cells.map((cell: any, i: number) => ({
+      ...cell, days: this.days(weeks[i], assignments, cal, maxUnits, r),
+    }));
+    return base;
+  }
+
+  /** 週內逐日容量/需求/旗標（僅回有容量或需求之日）。 */
+  private days(
+    w: { startMs: number; endMs: number }, assignments: Assignment[],
+    cal: Calendar | null, maxUnits: number, resource: any,
+  ) {
+    const out: any[] = [];
+    for (let d = 0; d < 7; d++) {
+      const dStartMs = w.startMs + d * DAY_MS, dEndMs = dStartMs + DAY_MS;
+      const dStart = toMin(dStartMs), dEnd = toMin(dEndMs);
+      const active = this.activeInWeek(resource, { startMs: dStartMs, endMs: dEndMs });
+      const capacity = cal && active ? Math.round(workingMinutesBetween(dStart, dEnd, cal) * maxUnits) : 0;
+      let demand = 0;
+      const overlaps: { s: number; e: number; units: number }[] = [];
+      for (const a of assignments) {
+        const aS = toMin(Date.parse(a.assignment_start!)), aE = toMin(Date.parse(a.assignment_finish!));
+        const oS = Math.max(dStart, aS), oE = Math.min(dEnd, aE);
+        if (oE <= oS) continue;
+        overlaps.push({ s: oS, e: oE, units: Number(a.assignment_units) });
+        if (!cal) continue;
+        const denom = workingMinutesBetween(aS, aE, cal);
+        if (denom > 0) demand += (Number(a.planned_work_minutes) * workingMinutesBetween(oS, oE, cal)) / denom;
+      }
+      demand = Math.round(demand);
+      if (capacity === 0 && demand === 0) continue; // 略過空白（週末/無事）
+      const flags: Flag[] = [];
+      if (capacity === 0) { flags.push('zero_capacity'); if (demand > 0) flags.push('over_allocated'); }
+      else if (demand > capacity) flags.push('over_allocated');
+      if (this.peakConcurrentUnits(overlaps) > maxUnits + 1e-9) flags.push('simultaneous_conflict');
+      if (cal && this.hasLeaveInWeek(cal, { startMs: dStartMs, endMs: dEndMs })) flags.push('on_leave');
+      out.push({
+        date: new Date(dStartMs + TZ_MIN * 60000).toISOString().slice(0, 10),
+        capacity_minutes: capacity, demand_minutes: demand,
+        load_rate: capacity > 0 ? demand / capacity : null, flags,
+      });
+    }
+    return out;
   }
 }

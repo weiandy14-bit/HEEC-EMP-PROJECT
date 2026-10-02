@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchWorkload } from './api';
-import type { WorkloadResponse, WorkloadFilters, WorkloadCell } from './types';
+import { fetchWorkload, fetchWorkloadResource } from './api';
+import type { WorkloadResponse, WorkloadFilters, WorkloadCell, WorkloadResource } from './types';
 import { LoadingState, EmptyState, ErrorState, NoPermissionState } from './components/States';
 
 const VIEW_KEY = 'workload.view.v1';
@@ -27,11 +27,23 @@ export function WorkloadPage() {
   const [phase, setPhase] = useState<'loading' | 'ok' | 'empty' | 'error' | 'forbidden'>('loading');
   const [errMsg, setErrMsg] = useState('');
   const [open, setOpen] = useState<string | null>(null); // 展開中的 cell key
+  const [detail, setDetail] = useState<Record<string, WorkloadResource>>({});
   const reqId = useRef(0);
+
+  const toggleCell = (resourceId: string, key: string) => {
+    if (open === key) { setOpen(null); return; }
+    setOpen(key);
+    if (!detail[resourceId]) {
+      void fetchWorkloadResource(resourceId, { from_week: filters.from_week }).then((r) => {
+        if (r.status === 200 && r.body) setDetail((prev) => ({ ...prev, [resourceId]: r.body! }));
+      });
+    }
+  };
 
   const load = useCallback(async () => {
     const my = ++reqId.current;
     setPhase('loading');
+    setDetail({});
     try {
       const r = await fetchWorkload({ ...filters, weeks: 4 });
       if (my !== reqId.current) return;
@@ -95,7 +107,7 @@ export function WorkloadPage() {
                       data-band={band} data-week={c.week}>
                       <button type="button" className="cell-btn" data-testid={`cell-${key}`}
                         aria-expanded={open === key} aria-label={`${r.name} ${c.week} 負荷 ${pctText(c)} ${bandLabel(band)}`}
-                        onClick={() => setOpen(open === key ? null : key)}>
+                        onClick={() => toggleCell(r.resource_id, key)}>
                         <span className="pct" data-testid="cell-pct">{pctText(c)}</span>
                         <span className="dc">{hours(c.demand_minutes)}/{hours(c.capacity_minutes)}</span>
                         <span className="band-label">{bandLabel(band)}</span>
@@ -115,6 +127,23 @@ export function WorkloadPage() {
                               ))}
                             </ul>
                           )}
+                          {(() => {
+                            const days = detail[r.resource_id]?.cells[i]?.days;
+                            if (!days) return <p className="muted" data-testid="days-loading">每日明細載入中…</p>;
+                            return (
+                              <table className="days" data-testid="cell-days">
+                                <thead><tr><th>日期</th><th>需求</th><th>容量</th><th>旗標</th></tr></thead>
+                                <tbody>
+                                  {days.map((d) => (
+                                    <tr key={d.date} data-testid="day-row">
+                                      <td>{d.date.slice(5)}</td><td>{hours(d.demand_minutes)}</td><td>{hours(d.capacity_minutes)}</td>
+                                      <td>{d.flags.map((f) => <span key={f} className={`flag flag-${f}`}>{flagLabel(f)}</span>)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            );
+                          })()}
                         </div>
                       )}
                     </td>

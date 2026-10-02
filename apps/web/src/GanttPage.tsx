@@ -233,6 +233,7 @@ function ProjectRows({ layout, start, end, collapsed, onToggle, pct, onTask }: {
             aria-expanded={!collapsed.has(`project:${project.id}`)} onClick={()=>onToggle(`project:${project.id}`)}>
             {collapsed.has(`project:${project.id}`) ? '▸' : '▾'}</button>
           <span className="proj-code">{project.code}</span> {project.name}
+          {project.stale&&<span className="stale">需重新排程</span>}
           <span className={`health health-${project.health}`}>{project.health}</span>
         </div>
         <div className="lane">
@@ -259,7 +260,7 @@ function ProjectRows({ layout, start, end, collapsed, onToggle, pct, onTask }: {
                 </button>
               ) : <span className="twisty-spacer" />}
               <span className="wbs">{task.wbs_code}</span> <button className="task-link" type="button" onClick={(e) => onTask(task.id, e.currentTarget)}>{task.name}</button>
-              <span className="task-status" data-testid="task-status">{statusLabel(task.status)}</span>
+              <span className="task-status" data-testid="task-status">{statusLabel(task.status)}{!task.actual.finish && task.percent_complete<100 && task.planned.finish && Date.parse(task.planned.finish)<Date.now()?' · 逾期':''}{task.critical?' · 關鍵':''}</span>
             </div>
             <div className="lane">
               <Bar kind="baseline" bar={task.baseline} pct={pct} />

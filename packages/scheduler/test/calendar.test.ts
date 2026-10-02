@@ -4,6 +4,7 @@ import {
   addWorking,
   subtractWorking,
   workingMinutesBetween,
+  workingIntervalsBetween,
   countWorkingDays,
   snapForward,
   snapBackward,
@@ -78,4 +79,13 @@ test('假日例外：availableMinutes=0 視為非工作日', () => {
 test('countWorkingDays：跨週僅計工作日', () => {
   // 週一 → 次週一：一~五 + 次週一 = 6 個工作日
   assert.equal(countWorkingDays(taipei('2027-01-04T09:00'), taipei('2027-01-11T09:30'), cal), 6);
+});
+
+test('working intervals exclude lunch/weekend and clip exact boundaries',()=>{
+ const start=taipei('2027-01-08T11:00'),end=taipei('2027-01-11T14:00');
+ const windows=workingIntervalsBetween(start,end,cal);
+ assert.equal(windows.reduce((n,w)=>n+w.end-w.start,0),workingMinutesBetween(start,end,cal));
+ assert.equal(windows.length,4);
+ assert.equal(windows[0].start,start);assert.equal(windows[windows.length-1].end,end);
+ assert.deepEqual(workingIntervalsBetween(start,start,cal),[]);
 });

@@ -212,3 +212,16 @@ export function countWorkingDays(a: Minute, b: Minute, cal: Calendar): number {
   }
   return count;
 }
+
+/** Enumerate actual working intervals, clipped to [a,b); excludes breaks and holidays. */
+export function workingIntervalsBetween(a: Minute, b: Minute, cal: Calendar): {start:Minute;end:Minute}[] {
+ const out:{start:Minute;end:Minute}[]=[];
+ if(b<=a)return out;
+ const first=toLocalParts(a,cal).dayIndex, last=toLocalParts(b,cal).dayIndex;
+ if(last-first>=MAX_DAYS_SCAN)throw new Error('working interval range exceeds twenty years');
+ for(let d=first;d<=last;d++)for(const w of windowsForDay(cal,dayIndexToDateStr(d),weekdayOf(d))){
+  const start=Math.max(a,localToAbs(d,w.start,cal)),end=Math.min(b,localToAbs(d,w.end,cal));
+  if(end>start)out.push({start,end});
+ }
+ return out;
+}

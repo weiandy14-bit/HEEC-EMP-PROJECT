@@ -50,6 +50,7 @@ export interface GanttProject {
   milestones: GanttMilestone[];
   /** 部分資料降級（U5）：該案聚合失敗時由上層標記。 */
   error?: boolean;
+  stale?: boolean;
 }
 
 export interface GanttResponse {
@@ -85,9 +86,10 @@ export interface GanttFilters {
 }
 
 // ── 頁 C 工程師負荷 ──
-export type LoadFlag = 'over_allocated' | 'simultaneous_conflict' | 'zero_capacity' | 'on_leave';
+export type LoadFlag = 'over_allocated' | 'simultaneous_conflict' | 'zero_capacity' | 'on_leave' | 'data_missing';
 
 export interface WorkloadSource {
+  assignment_id?: string; project_name?: string; task_name?: string; wbs_code?: string;
   project_id: string;
   task_id: string;
   minutes: number;
@@ -96,6 +98,8 @@ export interface WorkloadSource {
 }
 
 export interface WorkloadDay {
+  conflicts?: ConflictWindow[];
+  sources?: {assignment_id:string;project_name:string;wbs_code:string;task_name:string;minutes:number}[];
   date: string;
   capacity_minutes: number;
   demand_minutes: number;
@@ -103,7 +107,9 @@ export interface WorkloadDay {
   flags: LoadFlag[];
 }
 
+export interface ConflictWindow { start:string; finish:string; units:number; max_units:number }
 export interface WorkloadCell {
+  conflicts?: ConflictWindow[];
   week: string;
   demand_minutes: number;
   capacity_minutes: number;
@@ -114,6 +120,7 @@ export interface WorkloadCell {
 }
 
 export interface WorkloadResource {
+  error?:boolean; data_missing?:boolean;
   resource_id: string;
   name: string;
   max_units: number;
@@ -122,6 +129,7 @@ export interface WorkloadResource {
 }
 
 export interface WorkloadUnassigned {
+  total_count?:number;
   project_id: string;
   task_id: string;
   wbs_code: string;
@@ -137,6 +145,8 @@ export interface TeamSummaryRow {
 }
 
 export interface WorkloadResponse {
+  next_resource?:string|null;
+  partial_errors?:{resource_id:string;message:string}[];
   weeks: string[];
   resources: WorkloadResource[];
   unassigned: WorkloadUnassigned[];
@@ -144,15 +154,17 @@ export interface WorkloadResponse {
 }
 
 export interface WorkloadFilters {
+  project_id?:string;
   from_week?: string;
   team_id?: string;
   resource_id?: string;
 }
 
 // ── 頁 B 本週重要事項 ──
-export type WeeklyType = '交圖' | '送審' | '補正' | '會議';
+export type WeeklyType = '交圖' | '送審' | '補正' | '會議' | 'general' | 'milestone' | 'coordination' | 'internal_review' | '里程碑' | '內部審查' | '協調' | '工作';
 
 export interface WeeklyItem {
+  period_start?:string|null; period_end?:string|null;
   id: string;
   type: WeeklyType;
   title: string;
@@ -167,13 +179,22 @@ export interface WeeklyItem {
 }
 
 export interface WeeklyBoardResponse {
+  project_summary?:{id:string;name:string;health:string;percent_complete:number;permit_filing_date:string|null;remaining_workdays:number|null}[];
+  next_offset?:number|null;
+  partial_errors?:{kind:string;message:string}[];
   weekStart: string;
   weekEnd: string;
   items: WeeklyItem[];
 }
 
 export interface WeeklyBoardFilters {
+  project_id?:string; offset?:number; limit?:number;
   week: string; // prev | this | next | YYYY-Www
   type?: WeeklyType;
   assignee?: string;
 }
+
+export interface NamedOption {id:string;name:string}
+export interface WeeklyOptions {projects:NamedOption[];owners:NamedOption[]}
+export interface WorkloadOptions {projects:NamedOption[];resources:NamedOption[];teams:NamedOption[]}
+export interface SourceDetail {kind:string;source:Record<string,string|number|null>;actions:{label:string;path:string;status:string}[]}

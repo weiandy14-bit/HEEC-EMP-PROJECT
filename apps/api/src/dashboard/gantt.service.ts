@@ -189,11 +189,22 @@ export class GanttService {
     );
 
     // 組裝
+    const scheduleState=await this.db.query<any>(`
+      SELECT p.id,
+       EXISTS(SELECT 1 FROM project_tasks t WHERE t.project_id=p.id AND t.archived_at IS NULL AND t.updated_at>COALESCE(success.finished_at,'-infinity'::timestamptz))
+        OR EXISTS(SELECT 1 FROM task_dependencies d WHERE d.project_id=p.id AND d.archived_at IS NULL AND d.updated_at>COALESCE(success.finished_at,'-infinity'::timestamptz)) AS stale,
+       latest.status IN ('failed','infeasible') AS error
+      FROM projects p
+      LEFT JOIN LATERAL(SELECT finished_at FROM schedule_runs s WHERE s.project_id=p.id AND s.status='succeeded' ORDER BY finished_at DESC LIMIT 1) success ON true
+      LEFT JOIN LATERAL(SELECT status FROM schedule_runs s WHERE s.project_id=p.id ORDER BY started_at DESC,id DESC LIMIT 1) latest ON true
+      WHERE p.org_id=$1 AND p.id=ANY($2::uuid[])`,[ctx.orgId,ids]);
+    const stateById=new Map(scheduleState.map(r=>[r.id,r]));
     const byProject = new Map<string, any>();
     for (const p of projects) {
       byProject.set(p.id, {
         id: p.id, code: p.code, name: p.name, status: p.status, health: p.health,
         permit_filing_date: p.permit_filing_date, pm_user_id: p.pm_user_id,
+        stale:stateById.get(p.id)?.stale??false, error:stateById.get(p.id)?.error??false,
         task_next_cursor: null,
         task_count_remaining: 0,
         tasks: [] as GanttTask[], dependencies: [] as GanttDependency[], milestones: [] as GanttMilestone[],

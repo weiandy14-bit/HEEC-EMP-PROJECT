@@ -50,10 +50,12 @@ export async function fetchGantt(q: GanttQuery): Promise<ApiResult<GanttResponse
   return { status: res.status, body };
 }
 
-export async function fetchWorkload(q: WorkloadFilters & { weeks?: number }): Promise<ApiResult<WorkloadResponse>> {
+export async function fetchWorkload(q: WorkloadFilters & { weeks?: number;after_resource?:string }): Promise<ApiResult<WorkloadResponse>> {
   const qs = new URLSearchParams();
   if (q.from_week) qs.set('from_week', q.from_week);
   qs.set('weeks', String(q.weeks ?? 4));
+  if(q.after_resource)qs.set('after_resource',q.after_resource);
+  if (q.project_id) qs.set('project_id', q.project_id);
   if (q.team_id) qs.set('team_id', q.team_id);
   if (q.resource_id) qs.set('resource_id', q.resource_id);
   const res = await fetch(`/api/v1/dashboard/workload?${qs.toString()}`, { headers: { ...devHeaders() } });
@@ -62,9 +64,10 @@ export async function fetchWorkload(q: WorkloadFilters & { weeks?: number }): Pr
   return { status: res.status, body };
 }
 
-export async function fetchWorkloadResource(resourceId: string, q: { from_week?: string }): Promise<ApiResult<WorkloadResource>> {
+export async function fetchWorkloadResource(resourceId: string, q: WorkloadFilters): Promise<ApiResult<WorkloadResource>> {
   const qs = new URLSearchParams();
   if (q.from_week) qs.set('from_week', q.from_week);
+  if (q.project_id) qs.set('project_id', q.project_id);
   const res = await fetch(`/api/v1/dashboard/workload/resources/${resourceId}?${qs.toString()}`, { headers: { ...devHeaders() } });
   let body: WorkloadResource | null = null;
   try { body = (await res.json()) as WorkloadResource; } catch { body = null; }
@@ -76,6 +79,9 @@ export async function fetchWeekly(q: WeeklyBoardFilters): Promise<ApiResult<Week
   qs.set('week', q.week);
   if (q.type) qs.set('type', q.type);
   if (q.assignee) qs.set('assignee', q.assignee);
+  if(q.project_id)qs.set('project_id',q.project_id);
+  if(q.offset)qs.set('offset',String(q.offset));
+  if(q.limit)qs.set('limit',String(q.limit));
   const res = await fetch(`/api/v1/dashboard/weekly?${qs.toString()}`, { headers: { ...devHeaders() } });
   let body: WeeklyBoardResponse | null = null;
   try { body = (await res.json()) as WeeklyBoardResponse; } catch { body = null; }
@@ -102,4 +108,30 @@ export async function fetchGanttOptions(): Promise<ApiResult<GanttOptions>> {
 export async function fetchGanttTask(projectId: string, taskId: string): Promise<ApiResult<GanttTaskDetail>> {
   const res = await fetch(`/api/v1/projects/${projectId}/dashboard/gantt/tasks/${taskId}`, { headers: devHeaders() });
   return { status: res.status, body: res.ok ? await res.json() as GanttTaskDetail : null };
+}
+
+export async function fetchWeeklyOptions(){
+ const r=await fetch('/api/v1/dashboard/weekly/options',{headers:devHeaders()});
+ return {status:r.status,body:r.ok?await r.json() as import('./types').WeeklyOptions:null};
+}
+export async function fetchWorkloadOptions(){
+ const r=await fetch('/api/v1/dashboard/workload/options',{headers:devHeaders()});
+ return {status:r.status,body:r.ok?await r.json() as import('./types').WorkloadOptions:null};
+}
+export async function fetchWeeklySource(item:import('./types').WeeklyItem){
+ const r=await fetch(`/api/v1/dashboard/weekly/sources/${item.project_id}/${item.source.kind}/${item.source.id}`,{headers:devHeaders()});
+ return {status:r.status,body:r.ok?await r.json() as import('./types').SourceDetail:null};
+}
+export async function applySourceAction(action:{path:string;status:string}){
+ if(!/^\/projects\/[a-zA-Z0-9-]+\/(deliverables|meetings|reviews|weekly-items)\//.test(action.path))throw new Error('來源操作路徑無效');
+ const r=await fetch('/api/v1'+action.path,{method:'PATCH',headers:{...devHeaders(),'Content-Type':'application/json'},body:JSON.stringify({status:action.status})});
+ if(!r.ok){const body=await r.json().catch(()=>null);throw new Error(body?.message??`操作失敗 HTTP ${r.status}`);}
+}
+
+export async function fetchUnassigned(q:WorkloadFilters,offset:number){
+ const params=new URLSearchParams({weeks:'4',unassigned_offset:String(offset)});
+ for(const [key,value] of Object.entries(q))if(value)params.set(key,value);
+ const r=await fetch('/api/v1/dashboard/workload/unassigned?'+params,{headers:devHeaders()});
+ if(!r.ok)throw new Error(`未指派工作載入失敗 HTTP ${r.status}`);
+ return await r.json() as {items:import('./types').WorkloadUnassigned[]};
 }

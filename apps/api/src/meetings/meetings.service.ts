@@ -14,8 +14,10 @@ export class MeetingsService {
 
   private async assertProject(ctx: UserContext, projectId: string): Promise<void> {
     const p = await this.db.queryOne(
-      `SELECT 1 FROM projects WHERE org_id = $1 AND id = $2 AND archived_at IS NULL`,
-      [ctx.orgId, projectId],
+      `SELECT 1 FROM projects p WHERE org_id = $1 AND id = $2 AND archived_at IS NULL
+       AND ($4::boolean OR p.created_by=$3 OR p.pm_user_id=$3 OR EXISTS
+         (SELECT 1 FROM project_members m WHERE m.org_id=p.org_id AND m.project_id=p.id AND m.user_id=$3 AND m.archived_at IS NULL))`,
+      [ctx.orgId, projectId, ctx.userId, ctx.roles.includes('Admin')],
     );
     if (!p) throw DomainError.notFound('專案');
   }

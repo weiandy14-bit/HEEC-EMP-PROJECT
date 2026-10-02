@@ -113,3 +113,31 @@ test('5000-task Gantt bounds mounted rows and reaches the final task by native s
  await page.getByRole('button',{name:'展開 案件 測試案',exact:true}).click();
  await expect(page.getByRole('button',{name:'工作 00000',exact:true})).toBeVisible();
 });
+
+test('all dashboard pages pass WCAG 2.1 AA automated checks and source-dialog keyboard flow',async({page},testInfo)=>{
+ const {default:AxeBuilder}=await import('@axe-core/playwright');
+ await fixtures(page);
+ await page.route('**/weekly/options',r=>r.fulfill({json:{projects:[{id:'p1',name:'測試案'}],owners:[]}}));
+ await page.route('**/workload/options',r=>r.fulfill({json:{projects:[{id:'p1',name:'測試案'}],resources:[{id:'r1',name:'測試工程師'}],teams:[]}}));
+ await page.route('**/weekly/sources/**',r=>r.fulfill({json:{kind:'deliverable',source:{title:'正式交圖',status:'submitted',revision:'A'},actions:[]}}));
+ await page.goto('/');
+ for(const nav of ['nav-gantt','nav-workload','nav-weekly']){
+  await page.getByTestId(nav).click();await expect(page.getByTestId('state-loading')).toHaveCount(0);
+  const results=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();
+  await testInfo.attach(`${nav}-axe`,{body:JSON.stringify(results,null,2),contentType:'application/json'});
+  expect(results.violations).toEqual([]);
+ }
+ const button=page.getByRole('button',{name:'查看來源與完成確認：正式交圖'});
+ await button.focus();await page.keyboard.press('Enter');await expect(page.getByRole('dialog')).toBeVisible();
+ await expect(page.getByText('submitted',{exact:true})).toBeVisible();await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);await expect(button).toBeFocused();
+});
+
+test('partial and large data states retain good B/C records and reach final engineer',async({page})=>{
+ await fixtures(page);
+ await page.route('**/dashboard/weekly?**',r=>r.fulfill({json:{...weekly,partial_errors:[{kind:'review_step',message:'來源暫時無法載入'}],next_offset:50}}));
+ const many=Array.from({length:101},(_,i)=>({...resource,resource_id:`r${i}`,name:`工程師 ${String(i).padStart(3,'0')}`,error:i===0}));
+ await page.route('**/dashboard/workload?**',r=>r.fulfill({json:{...workload,resources:many}}));
+ await page.goto('/');await page.getByTestId('nav-weekly').click();await expect(page.getByTestId('state-partial')).toBeVisible();await expect(page.getByTestId('partial-placeholder')).toBeVisible();await expect(page.getByTestId('large-volume')).toBeVisible();
+ await page.getByTestId('nav-workload').click();await expect(page.getByTestId('state-partial')).toBeVisible();expect(await page.getByTestId('wl-row').count()).toBe(50);
+ await page.getByRole('button',{name:'下一頁工程師'}).click();await page.getByRole('button',{name:'下一頁工程師'}).click();await expect(page.getByText('工程師 100',{exact:true})).toBeVisible();
+});

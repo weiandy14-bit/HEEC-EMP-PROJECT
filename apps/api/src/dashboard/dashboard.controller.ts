@@ -24,10 +24,22 @@ export class DashboardController {
   @Get('gantt/options')
   async ganttOptions(@CurrentUser() user: UserContext) { return this.gantt.options(user); }
 
+  @Get('weekly/options')
+  async weeklyOptions(@CurrentUser() user: UserContext) { return this.weekly.options(user); }
+
+  @Get('weekly/sources/:p/:kind/:id')
+  async weeklySource(@CurrentUser() user: UserContext, @Param('p', ParseUUIDPipe) p: string, @Param('kind') kind: string, @Param('id', ParseUUIDPipe) id: string) { return this.weekly.source(user,p,kind,id); }
+
   @Get('weekly')
   async weeklyBoard(@CurrentUser() user: UserContext, @Query() q: WeeklyBoardQueryDto) {
     return this.weekly.board(user, q);
   }
+
+  @Get('workload/unassigned')
+  async unassigned(@CurrentUser() user: UserContext, @Query() q: WorkloadQueryDto) { return this.workload.unassignedPage(user,q); }
+
+  @Get('workload/options')
+  async workloadOptions(@CurrentUser() user: UserContext) { return this.workload.options(user); }
 
   @Get('workload')
   async workloadMatrix(@CurrentUser() user: UserContext, @Query() q: WorkloadQueryDto) {

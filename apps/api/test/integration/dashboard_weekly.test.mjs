@@ -114,3 +114,29 @@ test('P4-B 補正：status=revision → 類型補正', async () => {
 });
 
 test.after(async () => { await closeDb(); });
+
+test('P4-B complete: crossing-period source, project/owner filters, detail, completion and IDOR',async()=>{
+ const p=await createProject(),other=await createProject();
+ const w=await api('POST',`/projects/${p}/weekly-items`,{body:{title:'跨週內部審查',source_key:'acceptance-'+randomUUID(),type:'general',owner_id:PM_USER,period_start:iso(MON),period_end:iso(MON+10*DAY),due_at:iso(MON+10*DAY)}});
+ assert.equal(w.status,201,JSON.stringify(w.body));
+ for(const week of ['2027-W11','2027-W12']){const b=await api('GET',`/dashboard/weekly?week=${week}&project_id=${p}&assignee=${PM_USER}`);assert.equal(b.status,200);assert.equal(b.body.items.filter(i=>i.id===w.body.id).length,1);}
+ const path=`/dashboard/weekly/sources/${p}/weekly_item/${w.body.id}`;
+ const detail=await api('GET',path);assert.equal(detail.status,200);assert.equal(detail.body.actions[0].status,'done');
+ assert.equal((await api('GET',path,{roles:'Viewer'})).body.actions.length,0);
+ assert.equal((await api('GET',path.replace(p,other))).status,404);
+ const outsider=randomUUID();assert.equal((await api('GET',path,{user:outsider})).status,404);
+ assert.equal((await api('PATCH',`/projects/${p}/weekly-items/${w.body.id}`,{roles:'Viewer',body:{status:'done'}})).status,403);
+ assert.equal((await api('PATCH',`/projects/${p}/weekly-items/${w.body.id}`,{user:outsider,body:{status:'done'}})).status,404);
+ const done=await api('PATCH',`/projects/${p}/weekly-items/${w.body.id}`,{body:{status:'done'}});assert.equal(done.status,200);assert.ok(done.body.completed_at);
+ const later=await api('GET',`/dashboard/weekly?week=2027-W13&project_id=${p}`);assert.equal(later.body.items.some(i=>i.id===w.body.id),false);
+ assert.equal((await api('GET','/dashboard/weekly?week=2027-W53')).status,422);
+});
+
+test('P4-B paging has stable ordering, no duplicate IDs and named options',async()=>{
+ const p=await createProject();
+ await db().query(`INSERT INTO weekly_items(org_id,project_id,type,title,due_at,source_key,owner_id) SELECT $1,$2,'general','Item '||n,$3,'pager-'||n,$4 FROM generate_series(1,121)n`,[ORG,p,inWeek,PM_USER]);
+ const seen=new Set();let offset=0;
+ do{const r=await api('GET',`/dashboard/weekly?week=${WK}&project_id=${p}&limit=50&offset=${offset}`);assert.equal(r.status,200);for(const i of r.body.items){assert.ok(!seen.has(i.id));seen.add(i.id);}offset=r.body.next_offset;}while(offset!=null);
+ assert.equal(seen.size,121);
+ const opts=await api('GET','/dashboard/weekly/options');assert.ok(opts.body.projects.some(v=>v.id===p));assert.ok(opts.body.owners.some(v=>v.id===PM_USER));
+});

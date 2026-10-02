@@ -14,8 +14,10 @@ export class WeeklyService {
 
   private async assertProject(ctx: UserContext, projectId: string): Promise<void> {
     const p = await this.db.queryOne(
-      `SELECT 1 FROM projects WHERE org_id = $1 AND id = $2 AND archived_at IS NULL`,
-      [ctx.orgId, projectId],
+      `SELECT 1 FROM projects p WHERE org_id = $1 AND id = $2 AND archived_at IS NULL
+       AND ($4::boolean OR p.created_by=$3 OR p.pm_user_id=$3 OR EXISTS
+         (SELECT 1 FROM project_members m WHERE m.org_id=p.org_id AND m.project_id=p.id AND m.user_id=$3 AND m.archived_at IS NULL))`,
+      [ctx.orgId, projectId, ctx.userId, ctx.roles.includes('Admin')],
     );
     if (!p) throw DomainError.notFound('專案');
   }
@@ -88,12 +90,13 @@ export class WeeklyService {
 
   async update(ctx: UserContext, projectId: string, id: string, dto: UpdateWeeklyItemDto) {
     await this.assertProject(ctx, projectId);
-    const existing = await this.db.queryOne<{ id: string; status: string }>(
-      `SELECT id, status FROM weekly_items
+    const existing = await this.db.queryOne<{ id: string; status: string; owner_id: string | null }>(
+      `SELECT id, status, owner_id FROM weekly_items
         WHERE org_id = $1 AND project_id = $2 AND id = $3 AND archived_at IS NULL`,
       [ctx.orgId, projectId, id],
     );
     if (!existing) throw DomainError.notFound('週工作項');
+    if (ctx.roles.includes('Engineer') && !ctx.roles.some(r=>['Admin','PM','Lead'].includes(r)) && existing.owner_id!==ctx.userId) throw DomainError.forbidden('僅能更新本人週工作');
     const status = dto.status ?? existing.status;
     return this.db.transaction(async (client) => {
       const res = await client.query(

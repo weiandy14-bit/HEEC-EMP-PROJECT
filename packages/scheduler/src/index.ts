@@ -4,6 +4,7 @@ export {
   addWorking,
   subtractWorking,
   workingMinutesBetween,
+  workingIntervalsBetween,
   countWorkingDays,
   lateDays,
   snapForward,

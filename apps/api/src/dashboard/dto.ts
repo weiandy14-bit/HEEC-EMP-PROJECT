@@ -19,6 +19,10 @@ export class GanttQueryDto {
 }
 
 export class WorkloadQueryDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) unassigned_offset?: number;
+  @IsOptional() @IsUUID() project_id?: string;
+  @IsOptional() @IsUUID() after_resource?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(500) limit?: number;
   @IsOptional() @Matches(/^\d{4}-W\d{2}$/) from_week?: string; // 起始週（ISO 'YYYY-Www'）
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(12) weeks?: number;
   @IsOptional() @IsUUID() team_id?: string;
@@ -26,7 +30,10 @@ export class WorkloadQueryDto {
 }
 
 export class WeeklyBoardQueryDto {
+  @IsOptional() @IsUUID() project_id?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) offset?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(200) limit?: number;
   @IsOptional() @Matches(/^(prev|this|next|\d{4}-W\d{2})$/) week?: string;
-  @IsOptional() @IsIn(['交圖', '送審', '補正', '會議']) type?: string;
+  @IsOptional() @IsIn(['交圖', '送審', '補正', '會議','里程碑','內部審查','協調','工作']) type?: string;
   @IsOptional() @IsUUID() assignee?: string;
 }

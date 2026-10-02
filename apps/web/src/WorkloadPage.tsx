@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchWorkload, fetchWorkloadResource, downloadWorkload } from './api';
-import type { WorkloadResponse, WorkloadFilters, WorkloadCell, WorkloadResource } from './types';
-import { LoadingState, EmptyState, ErrorState, NoPermissionState } from './components/States';
+import { fetchWorkload, fetchWorkloadResource, downloadWorkload,fetchWorkloadOptions,fetchUnassigned } from './api';
+import type { WorkloadResponse, WorkloadFilters, WorkloadCell, WorkloadResource,WorkloadOptions } from './types';
+import { LoadingState, EmptyState, ErrorState, NoPermissionState,PartialBanner } from './components/States';
 
 const VIEW_KEY = 'workload.view.v1';
 
@@ -22,6 +22,10 @@ function loadSaved(): WorkloadFilters {
 }
 
 export function WorkloadPage() {
+  const [options,setOptions]=useState<WorkloadOptions>({projects:[],teams:[],resources:[]});
+  const [optionsError,setOptionsError]=useState('');
+  const [sort,setSort]=useState('name'),[page,setPage]=useState(0),[unassignedCount,setUnassignedCount]=useState(50);
+  useEffect(()=>{let alive=true;void fetchWorkloadOptions().then(r=>{if(alive){if(r.body)setOptions(r.body);else setOptionsError('篩選選單載入失敗');}}).catch(()=>{if(alive)setOptionsError('篩選選單載入失敗');});return()=>{alive=false;};},[]);
   const [filters, setFilters] = useState<WorkloadFilters>(loadSaved);
   const [data, setData] = useState<WorkloadResponse | null>(null);
   const [phase, setPhase] = useState<'loading' | 'ok' | 'empty' | 'error' | 'forbidden'>('loading');
@@ -39,7 +43,7 @@ export function WorkloadPage() {
     if (!detail[resourceId]) {
       const version = reqId.current;
       setDetailErrors((prev) => ({ ...prev, [resourceId]: '' }));
-      void fetchWorkloadResource(resourceId, { from_week: filters.from_week }).then((r) => {
+      void fetchWorkloadResource(resourceId, { from_week: filters.from_week,project_id:filters.project_id }).then((r) => {
         if (version !== reqId.current) return;
         if (r.status === 200 && r.body) setDetail((prev) => ({ ...prev, [resourceId]: r.body! }));
         else setDetailErrors((prev) => ({ ...prev, [resourceId]: `每日明細載入失敗 HTTP ${r.status}` }));
@@ -52,7 +56,7 @@ export function WorkloadPage() {
 
   const load = useCallback(async () => {
     const my = ++reqId.current;
-    setPhase('loading');
+    setPhase('loading');setPage(0);setUnassignedCount(50);
     setDetail({});
     setDetailErrors({});
     setOpen(null);
@@ -76,6 +80,16 @@ export function WorkloadPage() {
     try { localStorage.setItem(VIEW_KEY, JSON.stringify(f)); } catch { /* ignore */ }
   };
 
+  const [paging,setPaging]=useState(false),[pagingError,setPagingError]=useState('');
+  const moreResources=async()=>{
+   if(!data?.next_resource||paging)return;const version=reqId.current;setPaging(true);setPagingError('');
+   try{const r=await fetchWorkload({...filters,after_resource:data.next_resource});if(version!==reqId.current)return;if(!r.body||r.status!==200)throw new Error('工程師載入失敗');const body=r.body;
+    setData(prev=>prev?{...prev,resources:[...prev.resources,...body.resources],next_resource:body.next_resource,teamSummary:mergeTeams(prev.teamSummary,body.teamSummary)}:body);
+   }catch(e){if(version===reqId.current)setPagingError(e instanceof Error?e.message:'載入失敗');}finally{setPaging(false);}
+  };
+  const moreUnassigned=async()=>{if(!data||paging)return;const version=reqId.current;setPaging(true);setPagingError('');
+   try{const page=await fetchUnassigned(filters,data.unassigned.length);if(version!==reqId.current)return;setData(prev=>prev?{...prev,unassigned:[...prev.unassigned,...page.items]}:prev);setUnassignedCount(n=>n+200);}catch(e){if(version===reqId.current)setPagingError(e instanceof Error?e.message:'載入失敗');}finally{setPaging(false);}
+  };
   const exportData = async () => {
     setExporting(true); setExportError('');
     try { await downloadWorkload(filters); }
@@ -89,10 +103,11 @@ export function WorkloadPage() {
       <label className="filter">起始週<input data-testid="filter-from-week" aria-label="起始週 (YYYY-Www)"
         placeholder="2027-W10" value={filters.from_week ?? ''}
         onChange={(e) => update({ ...filters, from_week: e.target.value || undefined })} /></label>
-      <label className="filter">團隊<input data-testid="filter-team" aria-label="團隊篩選"
-        value={filters.team_id ?? ''} onChange={(e) => update({ ...filters, team_id: e.target.value || undefined })} /></label>
-      <label className="filter">工程師<input data-testid="filter-resource" aria-label="工程師篩選"
-        value={filters.resource_id ?? ''} onChange={(e) => update({ ...filters, resource_id: e.target.value || undefined })} /></label>
+      <label className="filter">團隊<select data-testid="filter-team" aria-label="團隊篩選" value={filters.team_id??''} onChange={e=>update({...filters,team_id:e.target.value||undefined})}><option value="">全部</option>{options.teams.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
+      <label className="filter">工程師<select data-testid="filter-resource" aria-label="工程師篩選" value={filters.resource_id??''} onChange={e=>update({...filters,resource_id:e.target.value||undefined})}><option value="">全部</option>{options.resources.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
+      <label className="filter">案件<select aria-label="負荷案件篩選" value={filters.project_id??''} onChange={e=>update({...filters,project_id:e.target.value||undefined})}><option value="">全部</option>{options.projects.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
+      <label>排序<select aria-label="負荷排序" value={sort} onChange={e=>{setSort(e.target.value);setPage(0);}}><option value="name">姓名</option><option value="load">負荷最高優先</option><option value="capacity">容量最多優先</option></select></label>
+      {optionsError&&<span role="status">{optionsError}</span>}
       <button type="button" disabled={phase !== 'ok' || exporting} onClick={() => void exportData()}>
         {exporting ? '匯出中…' : '匯出負荷 CSV'}
       </button>
@@ -107,9 +122,12 @@ export function WorkloadPage() {
   if (phase === 'empty' || !data) return <main className="app-16x9" data-testid="app-frame">{toolbar}<EmptyState message="目前沒有可顯示的工程師負荷。" /></main>;
 
   const weeks = data.weeks;
+  const sorted=[...data.resources].sort((a,b)=>sort==='name'?a.name.localeCompare(b.name):sort==='load'?Math.max(...b.cells.map(c=>c.load_rate??(c.demand_minutes?Infinity:0)))-Math.max(...a.cells.map(c=>c.load_rate??(c.demand_minutes?Infinity:0))):b.cells.reduce((n,c)=>n+c.capacity_minutes,0)-a.cells.reduce((n,c)=>n+c.capacity_minutes,0));
+  const visible=sorted.slice(page*50,(page+1)*50);
   return (
     <main className="app-16x9" data-testid="app-frame">
       {toolbar}
+      {!!(data.partial_errors?.length||data.resources.some(r=>r.error))&&<PartialBanner failedCount={data.partial_errors?.length||data.resources.filter(r=>r.error).length}/>}
       <div className="workload-scroll" data-testid="workload-scroll">
         <table className="workload" data-testid="workload">
           <thead>
@@ -119,10 +137,10 @@ export function WorkloadPage() {
             </tr>
           </thead>
           <tbody>
-            {data.resources.map((r) => (
+            {visible.map((r) => (
               <tr key={r.resource_id} data-testid="wl-row" data-resource-id={r.resource_id}>
                 <th className="name-col" scope="row">{r.name}<span className="muted"> ×{r.max_units}</span></th>
-                {r.cells.map((c, i) => {
+                {r.error?<td colSpan={4} data-testid="partial-placeholder">日曆資料無法計算，請重試<button type="button" onClick={()=>void load()}>重試</button></td>:r.cells.map((c, i) => {
                   const band = loadBand(c);
                   const key = `${r.resource_id}:${i}`;
                   return (
@@ -144,7 +162,7 @@ export function WorkloadPage() {
                             <ul>
                               {c.sources.map((s, j) => (
                                 <li key={j} data-testid="source-row">
-                                  案 {s.project_id.slice(0, 8)} / 任務 {s.task_id.slice(0, 8)} · {hours(s.minutes)} · units {s.assignment_units}
+                                  案 {s.project_name??s.project_id.slice(0,8)} / WBS {s.wbs_code??'—'} {s.task_name??s.task_id.slice(0,8)} / 指派 {s.assignment_id?.slice(0,8)??'—'} · {hours(s.minutes)} · units {s.assignment_units}
                                   {s.booking_type === 'cover' && <span className="tag-cover" data-testid="tag-cover">代班</span>}
                                 </li>
                               ))}
@@ -171,6 +189,10 @@ export function WorkloadPage() {
                               </table>
                             );
                           })()}
+                          <div aria-label="每日指派與衝突來源">{detail[r.resource_id]?.cells[i]?.days?.map(d=><div key={d.date}>
+                           {!!d.sources?.length&&<p>{d.date}：{d.sources.map(s=>`${s.project_name} / ${s.wbs_code} ${s.task_name} ${hours(s.minutes)}`).join('；')}</p>}
+                           {d.conflicts?.map((conflict,j)=><p key={j} className="conflict">同時投入衝突：{formatTime(conflict.start)}–{formatTime(conflict.finish)}，投入 {Math.round(conflict.units*100)}% / 容量 {Math.round(conflict.max_units*100)}%</p>)}
+                          </div>)}</div>
                         </div>
                       )}
                     </td>
@@ -182,22 +204,31 @@ export function WorkloadPage() {
         </table>
       </div>
 
+      {(data.resources.length>50||data.next_resource)&&<div data-testid="large-volume" className="list-pagination">
+       工程師第 {page*50+1}–{Math.min((page+1)*50,sorted.length)} 位，共 {sorted.length} 位
+       <button type="button" disabled={page===0} onClick={()=>{setPage(n=>n-1);setOpen(null);}}>上一頁工程師</button>
+       <button type="button" disabled={(page+1)*50>=sorted.length} onClick={()=>{setPage(n=>n+1);setOpen(null);}}>下一頁工程師</button>
+      </div>}
+      {data.next_resource&&<button type="button" disabled={paging} onClick={()=>void moreResources()}>載入更多工程師</button>}
+      {pagingError&&<p role="alert">{pagingError}；請重試載入。</p>}
       <section className="team-summary" aria-label="團隊容量與需求">
         <h2>團隊容量與需求</h2>
         {data.teamSummary.map((t) => <div key={t.team_id ?? 'none'}>
-          <strong>{t.team_id ?? '未分組'}</strong>
+          <strong>{options.teams.find(o=>o.id===t.team_id)?.name??t.team_id??'未分組'}</strong>
           {t.weeks.map((c) => <span key={c.week}> · {c.week}: {hours(c.demand_minutes)} / {hours(c.capacity_minutes)}</span>)}
         </div>)}
       </section>
       <section className="unassigned" data-testid="unassigned">
-        <h2>未指派工作（待分派 · {data.unassigned.length}）</h2>
+        <h2>未指派工作（待分派 · {data.unassigned[0]?.total_count??data.unassigned.length}）</h2>
         {data.unassigned.length > 0 && (
           <ul>
-            {data.unassigned.slice(0, 50).map((u) => (
+            {data.unassigned.slice(0, unassignedCount).map((u) => (
               <li key={u.task_id} data-testid="unassigned-row">{u.wbs_code} {u.name} · {hours(u.duration_minutes)}</li>
             ))}
           </ul>
         )}
+        {Number(data.unassigned[0]?.total_count??0)>data.unassigned.length&&<button type="button" disabled={paging} onClick={()=>void moreUnassigned()}>載入更多未指派工作</button>}
+        {data.unassigned.length>unassignedCount&&<button type="button" onClick={()=>setUnassignedCount(n=>n+50)}>顯示更多未指派工作</button>}
       </section>
     </main>
   );
@@ -209,6 +240,15 @@ function flagLabel(f: string): string {
     case 'simultaneous_conflict': return '同時衝突';
     case 'zero_capacity': return '零容量';
     case 'on_leave': return '請假';
+    case 'data_missing': return '資料缺漏';
     default: return f;
   }
+}
+
+const formatTime=(value:string)=>new Intl.DateTimeFormat('zh-TW',{timeZone:'Asia/Taipei',dateStyle:'short',timeStyle:'short'}).format(new Date(value));
+
+function mergeTeams(a:WorkloadResponse['teamSummary'],b:WorkloadResponse['teamSummary']){
+ const out=new Map(a.map(t=>[t.team_id,{...t,weeks:t.weeks.map(c=>({...c}))}]));
+ for(const t of b){const found=out.get(t.team_id);if(!found){out.set(t.team_id,t);continue;}for(const c of t.weeks){const old=found.weeks.find(w=>w.week===c.week);if(old){old.demand_minutes+=c.demand_minutes;old.capacity_minutes+=c.capacity_minutes;old.load_rate=old.capacity_minutes?old.demand_minutes/old.capacity_minutes:null;}}}
+ return [...out.values()];
 }

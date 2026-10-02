@@ -234,3 +234,28 @@ test('P4-C CSV formula protection and escaping', async () => {
 });
 
 test.after(async () => { await closeDb(); });
+
+test('P4-C complete: named source, project filter, contour, exact days, active range and conflict windows',async()=>{
+ const p=await createProject(),other=await createProject(),t=await makeTask(p),otherTask=await makeTask(other),res=await makeResource({active_from:'2027-03-10'});
+ await assign(p,t,res,{work:601,units:.75,start:iso(monMorning(W0)),finish:iso(friEvening(W0))});
+ await assign(other,otherTask,res,{work:480,units:.75,start:iso(monMorning(W0)),finish:iso(friEvening(W0))});
+ const a=(await db().query(`SELECT id FROM resource_assignments WHERE resource_id=$1 AND project_id=$2`,[res,p])).rows[0];
+ await db().query(`UPDATE resource_assignments SET contour=$2 WHERE id=$1`,[a.id,JSON.stringify([{start:iso(monMorning(W0)),finish:iso(W0+2*DAY+18*H),work_minutes:301},{start:iso(W0+3*DAY+9*H),finish:iso(friEvening(W0)),work_minutes:300}])]);
+ const filtered=await matrix(`&resource_id=${res}&project_id=${p}`);assert.equal(filtered.resources[0].cells[0].demand_minutes,601);assert.equal(filtered.resources[0].cells[0].capacity_minutes,1440);
+ const src=filtered.resources[0].cells[0].sources[0];assert.ok(src.assignment_id&&src.project_name&&src.task_name&&src.wbs_code);
+ const detail=await api('GET',`/dashboard/workload/resources/${res}?from_week=${FROM}`);assert.equal(detail.status,200,JSON.stringify(detail.body));
+ const first=detail.body.cells[0];assert.equal(first.days.reduce((n,d)=>n+d.demand_minutes,0),first.demand_minutes);
+ assert.ok(first.conflicts.length>0);assert.ok(first.conflicts.every(c=>c.units===1.5));assert.ok(first.days.some(d=>d.sources?.length));
+ assert.equal((await api('GET','/dashboard/workload?from_week=2027-W00')).status,422);
+ const opts=await api('GET','/dashboard/workload/options');assert.ok(opts.body.resources.some(r=>r.id===res));
+});
+
+test('P4-C no-working-calendar retains demand, signals missing data and independent queries see edits',async()=>{
+ const p=await createProject(),t=await makeTask(p),res=await makeResource();
+ const cal=randomUUID();await db().query(`INSERT INTO calendars(id,org_id,name,timezone,status) VALUES($1,$2,'Empty calendar','Asia/Taipei','active')`,[cal,ORG]);
+ await db().query(`INSERT INTO resource_calendars(org_id,resource_id,calendar_id,priority) VALUES($1,$2,$3,99)`,[ORG,res,cal]);
+ await assign(p,t,res,{work:480,start:iso(monMorning(W0)),finish:iso(friEvening(W0))});
+ let cell=(await matrix(`&resource_id=${res}`)).resources[0].cells[0];assert.equal(cell.demand_minutes,480);assert.equal(cell.capacity_minutes,0);assert.ok(cell.flags.includes('over_allocated'));
+ await db().query(`INSERT INTO calendar_working_days(org_id,calendar_id,weekday,local_start,local_end) VALUES($1,$2,1,'09:00','17:00')`,[ORG,cal]);
+ cell=(await matrix(`&resource_id=${res}`)).resources[0].cells[0];assert.equal(cell.capacity_minutes,480);
+});

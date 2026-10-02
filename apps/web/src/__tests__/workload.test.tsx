@@ -5,7 +5,7 @@ import type { WorkloadResponse, WorkloadResource, WorkloadCell } from '../types'
 const fetchWorkload = vi.fn();
 const fetchWorkloadResource = vi.fn();
 const downloadWorkload = vi.fn();
-vi.mock('../api', () => ({
+vi.mock('../api', () => ({ fetchWorkloadOptions:()=>Promise.resolve({status:200,body:{projects:[],teams:[],resources:[]}}),
   downloadWorkload: (...a: unknown[]) => downloadWorkload(...a),
   fetchWorkload: (...a: unknown[]) => fetchWorkload(...a),
   fetchWorkloadResource: (...a: unknown[]) => fetchWorkloadResource(...a),

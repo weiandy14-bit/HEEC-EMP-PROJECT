@@ -15,6 +15,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
 
     # 全新 PostgreSQL（每次 job 重新建立），供 migration/seed/smoke 使用
     services:
@@ -112,6 +113,17 @@ jobs:
 
       - name: End-to-end smoke test
         run: BASE="http://localhost:${PORT}/api/v1" bash scripts/smoke.sh
+
+      - name: Live dashboard performance (50 / 500 projects, 2.5M tasks)
+        run: BASE="http://localhost:${PORT}/api/v1" node scripts/performance/dashboard.mjs
+
+      - name: Performance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-performance-evidence
+          path: performance-results
+          retention-days: 14
 
       - name: API logs (on failure)
         if: failure()

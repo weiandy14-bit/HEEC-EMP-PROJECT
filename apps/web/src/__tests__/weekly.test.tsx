@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-li
 import type { WeeklyBoardResponse, WeeklyItem } from '../types';
 
 const fetchWeekly = vi.fn();
-vi.mock('../api', () => ({ fetchWeekly: (...a: unknown[]) => fetchWeekly(...a) }));
+vi.mock('../api', () => ({ fetchWeeklyOptions:()=>Promise.resolve({status:200,body:{projects:[],owners:[]}}), fetchWeeklySource:()=>Promise.resolve({status:200,body:{kind:'meeting',source:{title:'來源',status:'scheduled'},actions:[]}}), applySourceAction:()=>Promise.resolve(), fetchWeekly: (...a: unknown[]) => fetchWeekly(...a) }));
 
 import { WeeklyBoardPage } from '../WeeklyBoardPage';
 

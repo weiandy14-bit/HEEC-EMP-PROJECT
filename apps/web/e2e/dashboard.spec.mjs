@@ -48,6 +48,9 @@ test('cross-page keyboard, visible dependencies, drill-down, download and deskto
     await page.screenshot({ path: testInfo.outputPath(`${nav}.png`) });
   }
   await page.getByTestId('nav-workload').click();
+  const firstWeekHeader = await page.getByRole('columnheader', { name: '2027-W10' }).boundingBox();
+  const firstWeekCell = await page.getByTestId('wl-cell').first().boundingBox();
+  expect(Math.abs(firstWeekHeader.x - firstWeekCell.x)).toBeLessThan(1);
   await page.getByTestId('cell-r1:0').press('Enter');
   await expect(page.getByTestId('cell-days')).toContainText('請假');
   const downloading = page.waitForEvent('download');

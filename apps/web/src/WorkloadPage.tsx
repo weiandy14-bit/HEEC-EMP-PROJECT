@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchWorkload, fetchWorkloadResource } from './api';
+import { fetchWorkload, fetchWorkloadResource, downloadWorkload } from './api';
 import type { WorkloadResponse, WorkloadFilters, WorkloadCell, WorkloadResource } from './types';
 import { LoadingState, EmptyState, ErrorState, NoPermissionState } from './components/States';
 
@@ -28,6 +28,8 @@ export function WorkloadPage() {
   const [errMsg, setErrMsg] = useState('');
   const [open, setOpen] = useState<string | null>(null); // 展開中的 cell key
   const [detail, setDetail] = useState<Record<string, WorkloadResource>>({});
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
   const reqId = useRef(0);
 
   const toggleCell = (resourceId: string, key: string) => {
@@ -64,6 +66,13 @@ export function WorkloadPage() {
     try { localStorage.setItem(VIEW_KEY, JSON.stringify(f)); } catch { /* ignore */ }
   };
 
+  const exportData = async () => {
+    setExporting(true); setExportError('');
+    try { await downloadWorkload(filters); }
+    catch (e) { setExportError(e instanceof Error ? e.message : '匯出失敗'); }
+    finally { setExporting(false); }
+  };
+
   const toolbar = (
     <header className="toolbar">
       <h1>工程師四週負荷</h1>
@@ -74,6 +83,10 @@ export function WorkloadPage() {
         value={filters.team_id ?? ''} onChange={(e) => update({ ...filters, team_id: e.target.value || undefined })} /></label>
       <label className="filter">工程師<input data-testid="filter-resource" aria-label="工程師篩選"
         value={filters.resource_id ?? ''} onChange={(e) => update({ ...filters, resource_id: e.target.value || undefined })} /></label>
+      <button type="button" disabled={phase !== 'ok' || exporting} onClick={() => void exportData()}>
+        {exporting ? '匯出中…' : '匯出負荷 CSV'}
+      </button>
+      {exportError && <span role="alert">{exportError}</span>}
       <button type="button" data-testid="reset-view" onClick={() => update({})}>重設檢視</button>
     </header>
   );
@@ -155,6 +168,13 @@ export function WorkloadPage() {
         </table>
       </div>
 
+      <section className="team-summary" aria-label="團隊容量與需求">
+        <h2>團隊容量與需求</h2>
+        {data.teamSummary.map((t) => <div key={t.team_id ?? 'none'}>
+          <strong>{t.team_id ?? '未分組'}</strong>
+          {t.weeks.map((c) => <span key={c.week}> · {c.week}: {hours(c.demand_minutes)} / {hours(c.capacity_minutes)}</span>)}
+        </div>)}
+      </section>
       <section className="unassigned" data-testid="unassigned">
         <h2>未指派工作（待分派 · {data.unassigned.length}）</h2>
         {data.unassigned.length > 0 && (

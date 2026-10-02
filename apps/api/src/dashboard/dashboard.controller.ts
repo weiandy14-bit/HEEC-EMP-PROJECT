@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Header, Headers, Param, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
 import { GanttService } from './gantt.service';
 import { WorkloadService } from './workload.service';
 import { WeeklyBoardService } from './weekly.service';
@@ -29,6 +29,14 @@ export class DashboardController {
   @Get('workload')
   async workloadMatrix(@CurrentUser() user: UserContext, @Query() q: WorkloadQueryDto) {
     return this.workload.matrix(user, q);
+  }
+
+  @Get('workload/export')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="workload.csv"')
+  async exportWorkload(@CurrentUser() user: UserContext, @Query() q: WorkloadQueryDto,
+    @Headers('x-correlation-id') correlationId?: string) {
+    return this.workload.exportCsv(user, q, correlationId);
   }
 
   @Get('workload/resources/:r')

@@ -26,7 +26,7 @@ body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, "Not
 /* U7：主框架適配 16:9，頁面不做水平捲動 */
 .app-16x9 {
   display: flex; flex-direction: column;
-  width: 100%; height: 100vh; max-height: 100vh;
+  width: 100%; flex: 1; min-height: 0;
   aspect-ratio: 16 / 9; margin: 0 auto; overflow: hidden; padding: 0 16px;
 }
 .toolbar { display: flex; align-items: center; gap: 12px; padding: 10px 0; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
@@ -58,7 +58,13 @@ body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, "Not
 .today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--today); z-index: 1; }
 .milestone { position: absolute; transform: translateX(-50%); color: var(--accent); font-size: 12px; top: 50%; margin-top: -8px; }
 .milestone.ms-review_due { color: var(--muted); }
-.dep-line { display: none; } /* 占位：相依資料隨任務呈現，連線於畫布層繪製 */
+.project-group { position: relative; }
+.dependency-overlay { position: absolute; left: var(--name-col); top: 0; width: calc(100% - var(--name-col)); height: 100%; pointer-events: none; color: #475569; }
+.dep-line { fill: none; stroke: currentColor; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+.health-attention { background: #fef3c7; color: #78350f; }
+.health-behind, .health-overdue { background: #fee2e2; color: #991b1b; }
+.health-normal { background: #dcfce7; color: #14532d; }
 .health { margin-inline-start: auto; font-size: 11px; padding: 0 6px; border-radius: 10px; background: var(--border); color: var(--text); }
 .task-status { margin-inline-start: 8px; font-size: 11px; color: var(--muted); }
 .wbs { color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -129,3 +135,6 @@ table.days thead th { background: var(--panel); color: var(--muted); }
 .type-meeting { background: #0ea5e9; }
 .item-title { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item-meta { display: flex; gap: 8px; font-size: 11px; color: var(--muted); margin-top: 2px; flex-wrap: wrap; }
+
+.team-summary { padding: 8px; max-height: 15%; overflow: auto; }
+.team-summary h2 { font-size: 13px; }

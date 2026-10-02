@@ -99,6 +99,9 @@ describe('P4-A 多案總控甘特 UI', () => {
     await screen.findByTestId('gantt');
     expect(screen.getByTestId('today-line')).toBeInTheDocument();
     expect(screen.getAllByTestId('dep-line')).toHaveLength(1);
+    expect(screen.getByTestId('dep-line').tagName.toLowerCase()).toBe('path');
+    expect(screen.getByTestId('dep-line').getAttribute('d')).toMatch(/^M /);
+    expect(screen.getByTestId('dep-line')).toHaveAttribute('marker-end');
     expect(screen.getByTestId('filter-pm')).toBeInTheDocument();
     expect(screen.getByTestId('filter-discipline')).toBeInTheDocument();
     // 切換 zoom=day → 寫入 localStorage；重開還原

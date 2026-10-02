@@ -4,7 +4,9 @@ import type { WorkloadResponse, WorkloadResource, WorkloadCell } from '../types'
 
 const fetchWorkload = vi.fn();
 const fetchWorkloadResource = vi.fn();
+const downloadWorkload = vi.fn();
 vi.mock('../api', () => ({
+  downloadWorkload: (...a: unknown[]) => downloadWorkload(...a),
   fetchWorkload: (...a: unknown[]) => fetchWorkload(...a),
   fetchWorkloadResource: (...a: unknown[]) => fetchWorkloadResource(...a),
 }));
@@ -26,6 +28,7 @@ function resp(over: Partial<WorkloadResponse> = {}): WorkloadResponse {
 const ok = (body: WorkloadResponse) => Promise.resolve({ status: 200, body });
 
 beforeEach(() => {
+  downloadWorkload.mockReset();
   fetchWorkload.mockReset();
   fetchWorkloadResource.mockReset();
   fetchWorkloadResource.mockResolvedValue({ status: 200, body: null }); // 預設：不提供每日明細
@@ -109,6 +112,16 @@ describe('P4-C 工程師負荷 UI', () => {
     expect(await screen.findByTestId('cell-days')).toBeInTheDocument();
     expect(screen.getAllByTestId('day-row')).toHaveLength(2);
     expect(fetchWorkloadResource).toHaveBeenCalledWith(r.resource_id, expect.any(Object));
+  });
+
+  it('C6 export uses active filters and reports failures', async () => {
+    fetchWorkload.mockReturnValue(ok(resp()));
+    downloadWorkload.mockRejectedValueOnce(new Error('匯出失敗 HTTP 403'));
+    render(<WorkloadPage />);
+    await screen.findByTestId('workload');
+    fireEvent.click(screen.getByRole('button', { name: '匯出負荷 CSV' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('匯出失敗 HTTP 403');
+    expect(downloadWorkload).toHaveBeenCalledWith({});
   });
 
   it('C6 未指派清單', async () => {

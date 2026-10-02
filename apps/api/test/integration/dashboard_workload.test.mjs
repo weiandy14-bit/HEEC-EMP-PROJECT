@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { api, createProject, db, closeDb, ORG } from './helpers.mjs';
+import { api, createProject, db, closeDb, ORG, PM_USER } from './helpers.mjs';
 
 const TZ = 480, DAY = 86_400_000, H = 3_600_000;
 function weekMondayUtcMs(y, w) {
@@ -124,6 +124,12 @@ test('P4-C4 個人假期降低可用；零容量不除以零', async () => {
   const rl = findRes(await matrix(`&resource_id=${onLeave}`), onLeave);
   assert.equal(rl.cells[0].capacity_minutes, 1920, '週一假期扣 480 → 1920');
   assert.ok(rl.cells[0].flags.includes('on_leave'));
+  const detail = await api('GET', `/dashboard/workload/resources/${onLeave}?from_week=${FROM}`);
+  assert.equal(detail.status, 200);
+  const leaveDay = detail.body.cells[0].days.find((d) => d.date === mondayDate);
+  assert.ok(leaveDay, 'zero demand/capacity leave day remains visible');
+  assert.equal(leaveDay.capacity_minutes, 0);
+  assert.ok(leaveDay.flags.includes('on_leave'));
 });
 
 test('P4-C5 權限/IDOR：跨 org 工程師不出現、drill-down 404、無 cost_rate', async () => {
@@ -181,6 +187,50 @@ test('P4-C drill-down 每日明細：週內逐日容量/需求', async () => {
   assert.equal(mon.demand_minutes, 480);
   assert.equal(days[1].demand_minutes, 0, '週二無需求');
   assert.equal(days[1].capacity_minutes, 480, '週二仍有容量');
+});
+
+test('P4-C same-org project scope: matrix, detail, unassigned and team summaries exclude hidden projects', async () => {
+  const allowed = await createProject(), hidden = await createProject();
+  const otherUser = randomUUID();
+  await db().query(`INSERT INTO users (id, org_id, email, display_name, issuer, subject) VALUES ($1,$2,$3,'Other PM','dev',$1::text)`,
+    [otherUser, ORG, `${otherUser}@example.test`]);
+  await db().query(`UPDATE projects SET created_by=$2, pm_user_id=$2, status='active' WHERE id=$1`, [hidden, otherUser]);
+  await db().query(`DELETE FROM project_members WHERE project_id=$1 AND user_id=$2`, [hidden, PM_USER]);
+  const res = await makeResource();
+  const visibleTask = await makeTask(allowed);
+  const hiddenTask = randomUUID();
+  await db().query(`INSERT INTO project_tasks (id,org_id,project_id,wbs_code,sort_key,name,duration_minutes) VALUES ($1,$2,$3,'1','1','Hidden',480)`, [hiddenTask,ORG,hidden]);
+  for (const [p, t, work] of [[allowed, visibleTask, 480], [hidden, hiddenTask, 960]]) {
+    await assign(p, t, res, { work, start: iso(monMorning(W0)), finish: iso(friEvening(W0)) });
+  }
+  const orphan = randomUUID();
+  await db().query(`INSERT INTO project_tasks (id,org_id,project_id,wbs_code,sort_key,name,duration_minutes) VALUES ($1,$2,$3,'HIDDEN','HIDDEN','Hidden orphan',480)`, [orphan,ORG,hidden]);
+  await db().query(`UPDATE project_tasks SET planned_start=$2, planned_finish=$3 WHERE id=$1`,
+    [orphan, iso(monMorning(W0)), iso(friEvening(W0))]);
+  const result = await matrix(`&resource_id=${res}`);
+  assert.equal(result.resources[0].cells[0].demand_minutes, 480);
+  assert.deepEqual(result.resources[0].cells[0].sources.map((s) => s.project_id), [allowed]);
+  assert.ok(!result.unassigned.some((u) => u.project_id === hidden));
+  assert.equal(result.teamSummary[0].weeks[0].demand_minutes, 480);
+  const detail = await api('GET', `/dashboard/workload/resources/${res}?from_week=${FROM}`);
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.cells[0].days.reduce((sum, day) => sum + day.demand_minutes, 0), 480);
+  const exportResult = await api('GET', `/dashboard/workload/export?from_week=${FROM}&resource_id=${res}`);
+  assert.equal(exportResult.status, 200);
+  assert.ok(exportResult.body.includes('"480"'));
+  assert.ok(!exportResult.body.includes('"1440"'), 'export does not include hidden demand');
+  const logged = await db().query(`SELECT 1 FROM audit_logs WHERE org_id=$1 AND actor_id=$2 AND entity_type='dashboard_workload' AND action='export'`, [ORG,PM_USER]);
+  assert.ok(logged.rows.length > 0, 'export audit exists');
+  const admin = await api('GET', `/dashboard/workload?from_week=${FROM}&resource_id=${res}`, { roles: 'Admin' });
+  assert.equal(admin.body.resources[0].cells[0].demand_minutes, 1440);
+});
+
+test('P4-C CSV formula protection and escaping', async () => {
+  const res = await makeResource();
+  await db().query(`UPDATE resources SET name=$2 WHERE id=$1`, [res, '=HYPERLINK("https://example.test")']);
+  const r = await api('GET', `/dashboard/workload/export?from_week=${FROM}&resource_id=${res}`);
+  assert.equal(r.status, 200);
+  assert.ok(r.body.includes(`"'=HYPERLINK(""https://example.test"")"`));
 });
 
 test.after(async () => { await closeDb(); });

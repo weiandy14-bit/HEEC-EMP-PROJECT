@@ -73,3 +73,16 @@ export async function fetchWeekly(q: WeeklyBoardFilters): Promise<ApiResult<Week
   try { body = (await res.json()) as WeeklyBoardResponse; } catch { body = null; }
   return { status: res.status, body };
 }
+
+/** Download server-scoped data, with export audit and spreadsheet-safe CSV. */
+export async function downloadWorkload(q: WorkloadFilters): Promise<void> {
+  const qs = new URLSearchParams({ weeks: '4' });
+  for (const [key, value] of Object.entries(q)) if (value) qs.set(key, value);
+  const res = await fetch(`/api/v1/dashboard/workload/export?${qs}`, { headers: devHeaders() });
+  if (!res.ok) throw new Error(`匯出失敗 HTTP ${res.status}`);
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement('a');
+  link.href = url; link.download = 'workload.csv';
+  document.body.appendChild(link); link.click(); link.remove();
+  URL.revokeObjectURL(url);
+}

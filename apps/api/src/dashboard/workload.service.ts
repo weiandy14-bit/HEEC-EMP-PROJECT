@@ -1,12 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { workingMinutesBetween, type Calendar } from '@heec/scheduler';
 import { DatabaseService } from '../database/database.service';
+import { AuditService } from '../audit/audit.service';
 import { DomainError } from '../common/errors';
 import { buildCalendar, type CalendarRows } from '../schedule/mapper';
 import type { UserContext } from '../auth/request-context';
 import type { WorkloadQueryDto } from './dto';
 
 const TZ_MIN = 480; // Asia/Taipei 固定偏移
+// Same project visibility contract as GanttService. Always combine with org scope.
+const PROJECT_VISIBILITY = `( $5::boolean OR p.created_by = $6 OR p.pm_user_id = $6
+  OR EXISTS (SELECT 1 FROM project_members m WHERE m.org_id = p.org_id
+    AND m.project_id = p.id AND m.user_id = $6 AND m.archived_at IS NULL) )`;
 const DAY_MS = 86_400_000;
 const toMin = (ms: number) => Math.floor(ms / 60000);
 
@@ -43,7 +48,29 @@ function isoWeekLabel(weekStartUtcMsVal: number): string {
 
 @Injectable()
 export class WorkloadService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(private readonly db: DatabaseService, private readonly audit: AuditService) {}
+
+  /** CSV uses the same scoped live query as the matrix; no client-provided rows. */
+  async exportCsv(ctx: UserContext, q: WorkloadQueryDto, correlationId?: string) {
+    const data = await this.matrix(ctx, q);
+    const quote = (value: unknown) => {
+      let text = String(value ?? '');
+      if (/^[\s]*[=+@-]/.test(text)) text = "'" + text;
+      return '"' + text.replaceAll('"', '""') + '"';
+    };
+    const rows: unknown[][] = [['type', 'resource_id', 'name', 'team_id', 'week', 'demand_minutes', 'capacity_minutes', 'load_rate', 'flags']];
+    for (const r of data.resources) for (const c of r.cells) {
+      rows.push(['resource', r.resource_id, r.name, r.team_id, c.week, c.demand_minutes, c.capacity_minutes, c.load_rate, c.flags.join('|')]);
+    }
+    for (const t of data.teamSummary) for (const c of t.weeks) {
+      rows.push(['team', '', '', t.team_id, c.week, c.demand_minutes, c.capacity_minutes, c.load_rate, '']);
+    }
+    await this.db.transaction((client) => this.audit.write(client, ctx, {
+      entityType: 'dashboard_workload', action: 'export', correlationId,
+      diff: { filters: { ...q }, resource_count: data.resources.length, row_count: rows.length - 1 },
+    }));
+    return '\ufeff' + rows.map((r) => r.map(quote).join(',')).join('\r\n') + '\r\n';
+  }
 
   private calCache = new Map<string, Calendar | null>();
 
@@ -110,11 +137,12 @@ export class WorkloadService {
           `SELECT a.id, a.project_id, a.task_id, a.resource_id, a.assignment_units,
                   a.planned_work_minutes, a.assignment_start, a.assignment_finish, a.booking_type
              FROM resource_assignments a
-            WHERE a.org_id = $1 AND a.resource_id = ANY($2) AND a.archived_at IS NULL
+             JOIN projects p ON p.org_id = a.org_id AND p.id = a.project_id
+            WHERE p.archived_at IS NULL AND ${PROJECT_VISIBILITY} AND a.org_id = $1 AND a.resource_id = ANY($2) AND a.archived_at IS NULL
               AND a.booking_type IN ('committed','cover')
               AND a.assignment_start IS NOT NULL AND a.assignment_finish IS NOT NULL
               AND a.assignment_start < $4 AND a.assignment_finish > $3`,
-          [ctx.orgId, ids, new Date(rangeStart).toISOString(), new Date(rangeEnd).toISOString()])
+          [ctx.orgId, ids, new Date(rangeStart).toISOString(), new Date(rangeEnd).toISOString(), ctx.roles.includes('Admin'), ctx.userId])
       : [];
     const byResource = new Map<string, Assignment[]>();
     for (const a of assignments) {
@@ -220,13 +248,14 @@ export class WorkloadService {
          JOIN projects p ON p.org_id = t.org_id AND p.id = t.project_id
         WHERE t.org_id = $1 AND p.status = 'active' AND p.archived_at IS NULL
           AND t.archived_at IS NULL AND t.summary = false AND t.milestone = false
+          AND ${PROJECT_VISIBILITY.replaceAll('$5', '$4').replaceAll('$6', '$5')}
           AND t.duration_minutes > 0
           AND t.planned_start IS NOT NULL AND t.planned_finish IS NOT NULL
           AND t.planned_start < $3 AND t.planned_finish > $2
           AND NOT EXISTS (SELECT 1 FROM resource_assignments a
                            WHERE a.task_id = t.id AND a.archived_at IS NULL)
         ORDER BY t.planned_start LIMIT 200`,
-      [ctx.orgId, new Date(startMs).toISOString(), new Date(endMs).toISOString()]);
+      [ctx.orgId, new Date(startMs).toISOString(), new Date(endMs).toISOString(), ctx.roles.includes('Admin'), ctx.userId]);
   }
 
   private teamSummary(resources: any[], weeks: { label: string }[]) {
@@ -270,10 +299,13 @@ export class WorkloadService {
       `SELECT a.id, a.project_id, a.task_id, a.resource_id, a.assignment_units,
               a.planned_work_minutes, a.assignment_start, a.assignment_finish, a.booking_type
          FROM resource_assignments a
-        WHERE a.org_id = $1 AND a.resource_id = $2 AND a.archived_at IS NULL
+         JOIN projects p ON p.org_id = a.org_id AND p.id = a.project_id
+        WHERE p.archived_at IS NULL AND ${PROJECT_VISIBILITY} AND a.org_id = $1 AND a.resource_id = $2 AND a.archived_at IS NULL
           AND a.booking_type IN ('committed','cover')
-          AND a.assignment_start IS NOT NULL AND a.assignment_finish IS NOT NULL`,
-      [ctx.orgId, r.id]);
+          AND a.assignment_start IS NOT NULL AND a.assignment_finish IS NOT NULL
+          AND a.assignment_start < $4 AND a.assignment_finish > $3`,
+      [ctx.orgId, r.id, new Date(weeks[0].startMs).toISOString(),
+       new Date(weeks[weeks.length - 1].endMs).toISOString(), ctx.roles.includes('Admin'), ctx.userId]);
 
     base.cells = base.cells.map((cell: any, i: number) => ({
       ...cell, days: this.days(weeks[i], assignments, cal, maxUnits, r),
@@ -304,12 +336,14 @@ export class WorkloadService {
         if (denom > 0) demand += (Number(a.planned_work_minutes) * workingMinutesBetween(oS, oE, cal)) / denom;
       }
       demand = Math.round(demand);
-      if (capacity === 0 && demand === 0) continue; // 略過空白（週末/無事）
+      const onLeave = !!cal && this.hasLeaveInWeek(cal, { startMs: dStartMs, endMs: dEndMs });
+      // Preserve leave/zero-unit and missing-calendar days; ordinary nonworking days can be omitted.
+      if (capacity === 0 && demand === 0 && !onLeave && cal && maxUnits > 0) continue;
       const flags: Flag[] = [];
       if (capacity === 0) { flags.push('zero_capacity'); if (demand > 0) flags.push('over_allocated'); }
       else if (demand > capacity) flags.push('over_allocated');
       if (this.peakConcurrentUnits(overlaps) > maxUnits + 1e-9) flags.push('simultaneous_conflict');
-      if (cal && this.hasLeaveInWeek(cal, { startMs: dStartMs, endMs: dEndMs })) flags.push('on_leave');
+      if (onLeave) flags.push('on_leave');
       out.push({
         date: new Date(dStartMs + TZ_MIN * 60000).toISOString().slice(0, 10),
         capacity_minutes: capacity, demand_minutes: demand,

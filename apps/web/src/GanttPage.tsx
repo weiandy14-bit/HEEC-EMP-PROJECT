@@ -93,7 +93,7 @@ export function GanttPage() {
         <div className="gantt-scroll" data-testid="timeline-scroll">
           <div className="gantt-body" style={{ minWidth: timelineWidth }}>
             {todayLeft != null && (
-              <div className="today-line" data-testid="today-line" style={{ left: `${todayLeft}%` }} aria-hidden="true" />
+              <div className="today-line" data-testid="today-line" style={{ left: `calc(var(--name-col) + (100% - var(--name-col)) * ${todayLeft / 100})` }} aria-hidden="true" />
             )}
             {projects.map((p) => (
               <ProjectRows
@@ -187,7 +187,7 @@ function ProjectRows({ project, collapsed, onToggle, pct }: {
             <div className="name-col" style={{ paddingInlineStart: 12 + depth * 16 }}>
               {hasChildren ? (
                 <button type="button" className="twisty" aria-expanded={!collapsed.has(task.id)}
-                  data-testid={`toggle-${task.id}`} onClick={() => onToggle(task.id)}>
+                  aria-label={`${collapsed.has(task.id) ? '展開' : '收合'} ${task.name}`} data-testid={`toggle-${task.id}`} onClick={() => onToggle(task.id)}>
                   {collapsed.has(task.id) ? '▸' : '▾'}
                 </button>
               ) : <span className="twisty-spacer" />}
@@ -202,10 +202,29 @@ function ProjectRows({ project, collapsed, onToggle, pct }: {
           </div>
         );
       })}
-      {project.dependencies.map((dep) => (
-        <div key={dep.id} className="dep-line" data-testid="dep-line"
-          data-rel={dep.relation} data-pred={dep.predecessor_id} data-succ={dep.successor_id} aria-hidden="true" />
-      ))}
+      <svg className="dependency-overlay" viewBox={`0 0 1000 ${(rows.length + 1) * 30}`}
+        preserveAspectRatio="none" role="img" aria-label={`${project.name} 工作相依關係`}>
+        <defs><marker id={`arrow-${project.id}`} markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="currentColor" />
+        </marker></defs>
+        {project.dependencies.map((dep) => {
+          const predIndex = rows.findIndex((r) => r.task.id === dep.predecessor_id);
+          const succIndex = rows.findIndex((r) => r.task.id === dep.successor_id);
+          if (predIndex < 0 || succIndex < 0) return null;
+          const pred = rows[predIndex].task, succ = rows[succIndex].task;
+          const start = pct(d(dep.relation[0] === 'F' ? pred.planned.finish : pred.planned.start));
+          const finish = pct(d(dep.relation[1] === 'F' ? succ.planned.finish : succ.planned.start));
+          if (start == null || finish == null) return null;
+          const x1 = start * 10, x2 = finish * 10;
+          const y1 = (predIndex + 1) * 30 + 15, y2 = (succIndex + 1) * 30 + 15;
+          const elbow = Math.max(x1, x2) + 8;
+          return <path key={dep.id} className="dep-line" data-testid="dep-line"
+            data-rel={dep.relation} data-pred={dep.predecessor_id} data-succ={dep.successor_id}
+            d={`M ${x1} ${y1} H ${elbow} V ${y2} H ${x2}`} markerEnd={`url(#arrow-${project.id})`}>
+            <title>{`${pred.name} → ${succ.name}: ${dep.relation}, lag ${dep.lag_minutes} 分鐘`}</title>
+          </path>;
+        })}
+      </svg>
     </section>
   );
 }

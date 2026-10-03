@@ -2285,6 +2285,89 @@
           },
           "can_commit": {
             "type": "boolean"
+          },
+          "profiles": {
+            "type": "object",
+            "description": "Source calendar/resource profiles vs the mapped target, with explicit differences for the decision UI; imports never modify org calendars or resource capacity.",
+            "properties": {
+              "calendars": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source_timezone": {
+                      "type": "string"
+                    },
+                    "source_hours": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    },
+                    "differences": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "timezone",
+                          "hours",
+                          "unmapped"
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "resources": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source_max_units": {
+                      "type": "string"
+                    },
+                    "source_type": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    },
+                    "differences": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "capacity",
+                          "unmapped"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "required": [
+              "calendars",
+              "resources"
+            ]
           }
         },
         "required": [
@@ -2332,6 +2415,89 @@
             "type": [
               "integer",
               "null"
+            ]
+          },
+          "profiles": {
+            "type": "object",
+            "description": "Source calendar/resource profiles vs the mapped target, with explicit differences for the decision UI; imports never modify org calendars or resource capacity.",
+            "properties": {
+              "calendars": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source_timezone": {
+                      "type": "string"
+                    },
+                    "source_hours": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    },
+                    "differences": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "timezone",
+                          "hours",
+                          "unmapped"
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "resources": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source_max_units": {
+                      "type": "string"
+                    },
+                    "source_type": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    },
+                    "differences": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "capacity",
+                          "unmapped"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "required": [
+              "calendars",
+              "resources"
             ]
           }
         },

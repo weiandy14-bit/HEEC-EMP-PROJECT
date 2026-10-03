@@ -26,7 +26,7 @@ test('Project exchange: upload, invalid preview, correction, commit and private 
  await expect(page.getByRole('button',{name:'確認提交全部變更'})).toBeDisabled();
  await page.getByRole('button',{name:'產生預覽／重新驗證'}).click();
  await page.getByRole('button',{name:'確認提交全部變更'}).click();
- await expect(page.getByRole('status')).toContainText('匯入成功');
+ await expect(page.getByRole('status',{name:'交換結果'})).toContainText('匯入成功');
  const download=page.waitForEvent('download');await page.getByRole('button',{name:'產生並下載'}).click();await download;
  const a11y=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();expect(a11y.violations).toEqual([]);
  const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth);expect(overflow).toBe(false);

@@ -290,7 +290,7 @@ export class WorkloadService {
     // 未指派工作：可視進行中案件之葉工作、有工時、無任何指派、且計畫窗與範圍相交
     return this.db.query<any>(
       `SELECT count(*) OVER() AS total_count,t.project_id, t.id AS task_id, t.wbs_code, t.name,
-              t.planned_start, t.planned_finish, t.duration_minutes
+              t.planned_start, t.planned_finish, t.duration_minutes, t.unassigned_work_minutes
          FROM project_tasks t
          JOIN projects p ON p.org_id = t.org_id AND p.id = t.project_id
         WHERE t.org_id = $1 AND p.status = 'active' AND p.archived_at IS NULL

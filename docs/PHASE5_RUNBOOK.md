@@ -8,7 +8,9 @@
 5. 提交做版本與冪等檢查；SQL 半途失敗回滾業務變更，保留失敗稽核。
 6. 匯出與 round-trip JSON 報告列出逐欄差異。單檔 CSV 無法保存完整指派與基準；XLSX/CSV package 包含完整交換工作表。
 
-現在是同步 201。作業歷史（GET /imports、GET /exports，新到舊、分頁、不外洩儲存鍵）、伺服器取消（POST /imports/{j}/cancel，If-Match 版本鎖、移除原檔、冪等、已提交不可取消）與掃描重試（POST /imports/{j}/scan-retry，僅 scan_state=error 可重試、fail-closed 不旁路、If-Match 版本鎖）已交付。原檔／預覽保存期限清理已交付：Admin 維運端點 POST /internal/exchange/retention 於單次清掃中刪除過期不可變預覽、清除過期原檔與匯出輸出檔；作業歷史列與稽核保留為清理證據。不可變預覽刪除以交易內受限權限旗標（app.retention_sweep）進行，觸發器仍拒絕一般路徑的 UPDATE／DELETE；檔案刪除成功才標記 purged_at，失敗者留待下次清掃重試（可重試）。真正非同步 worker 與 202 仍待完成，見 PHASE5_STATUS.md。
+預設為同步 201。另提供 opt-in 非同步：請求帶 `Prefer: respond-async` → 202 + status_url + Location，由背景 worker 執行掃描（匯入）／render（匯出）。同步與非同步共用掃描、驗證與 render 核心；Idempotency-Key 同時涵蓋兩路（同鍵同請求重放不重複執行，異請求 409）。非同步上傳成功僅表示「已接受」：掃描通過前禁預覽／提交，render 完成前禁下載（export_pending）。前端可輪詢狀態端點。Worker（POST /internal/exchange/worker，Admin；正式以排程驅動）具：租約認領、逾期租約回收（程序中斷可恢復）、冪等、指數退避、最大重試與 dead-letter。取消會一併取消佇列中的掃描作業，執行中的掃描於提交前重查狀態，已取消者不被重新完成；保存期限清理僅作用於已過期（非進行中）作業，不會提前刪除執行中檔案。
+
+同步流程：作業歷史（GET /imports、GET /exports，新到舊、分頁、不外洩儲存鍵）、伺服器取消（POST /imports/{j}/cancel，If-Match 版本鎖、移除原檔、冪等、已提交不可取消）與掃描重試（POST /imports/{j}/scan-retry，僅 scan_state=error 可重試、fail-closed 不旁路、If-Match 版本鎖）已交付。原檔／預覽保存期限清理已交付：Admin 維運端點 POST /internal/exchange/retention 於單次清掃中刪除過期不可變預覽、清除過期原檔與匯出輸出檔；作業歷史列與稽核保留為清理證據。不可變預覽刪除以交易內受限權限旗標（app.retention_sweep）進行，觸發器仍拒絕一般路徑的 UPDATE／DELETE；檔案刪除成功才標記 purged_at，失敗者留待下次清掃重試（可重試）。真正非同步 worker 與 202 仍待完成，見 PHASE5_STATUS.md。
 
 保存期限（預設）：原檔／輸出 30 天、預覽 90 天、稽核不隨檔案刪除。清理與下載／提交／worker 的競爭：匯入過期即 job_expired、匯出過期即 export_expired（兩者於讀檔前先擋），故清掃刪檔不影響進行中的有效預覽或下載；提交以 preview_stale／版本鎖防護。
 

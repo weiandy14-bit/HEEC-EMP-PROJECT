@@ -3,7 +3,7 @@
   "info": {
     "title": "HEEC Project Exchange API",
     "version": "0.5.0-in-progress",
-    "description": "Current API. Development headers are not production login; OIDC/Cloudflare are Phase 6. Upload/export currently return 201 synchronously, not the planned asynchronous worker 202."
+    "description": "Current API. Development headers are not production login; OIDC/Cloudflare are Phase 6. Upload/export return 201 synchronously by default; Prefer: respond-async opts into the asynchronous worker (202) with scan/render performed in the background."
   },
   "servers": [
     {
@@ -248,11 +248,46 @@
               "minLength": 1,
               "maxLength": 200
             }
+          },
+          {
+            "name": "Prefer",
+            "in": "header",
+            "required": false,
+            "description": "respond-async opts into the asynchronous worker path: the job is accepted (202) with status_url + Location and a background worker performs scan (import) / render (export). Omitted = current synchronous 201. Idempotency-Key covers both paths.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "respond-async"
+              ]
+            }
           }
         ],
         "responses": {
           "201": {
             "description": "Current synchronous implementation. Asynchronous 202 worker is pending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJob"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted for asynchronous processing (Prefer: respond-async). Body carries the job with status_url; poll it until scan_state=clean (import) or state=succeeded (export). Preview/commit are rejected until scan passes; download until render completes.",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "status_url of the accepted job"
+              },
+              "Preference-Applied": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -987,11 +1022,46 @@
               "minLength": 1,
               "maxLength": 200
             }
+          },
+          {
+            "name": "Prefer",
+            "in": "header",
+            "required": false,
+            "description": "respond-async opts into the asynchronous worker path: the job is accepted (202) with status_url + Location and a background worker performs scan (import) / render (export). Omitted = current synchronous 201. Idempotency-Key covers both paths.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "respond-async"
+              ]
+            }
           }
         ],
         "responses": {
           "201": {
             "description": "Current synchronous implementation. Asynchronous 202 worker is pending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportJob"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted for asynchronous processing (Prefer: respond-async). Body carries the job with status_url; poll it until scan_state=clean (import) or state=succeeded (export). Preview/commit are rejected until scan passes; download until render completes.",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "status_url of the accepted job"
+              },
+              "Preference-Applied": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1813,6 +1883,70 @@
           }
         }
       }
+    },
+    "/internal/exchange/worker": {
+      "post": {
+        "operationId": "exchangeWorkerProcess",
+        "tags": [
+          "Project Exchange"
+        ],
+        "description": "Admin maintenance: claim and process a batch of queued async scan/render jobs. Lease-based claim reclaims jobs whose worker crashed; each job is idempotent, retried with exponential backoff, and dead-lettered after the max attempts. In production this is driven on a timer.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "default": 10
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Batch result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "claimed": {
+                      "type": "integer"
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  "required": [
+                    "claimed",
+                    "results"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role/identity denied (Admin only)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2076,6 +2210,9 @@
           },
           "result": {
             "type": "object"
+          },
+          "status_url": {
+            "type": "string"
           }
         },
         "required": [
@@ -2220,6 +2357,9 @@
           },
           "report": {
             "type": "object"
+          },
+          "status_url": {
+            "type": "string"
           }
         },
         "required": [

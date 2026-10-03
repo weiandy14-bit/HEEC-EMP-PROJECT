@@ -9,4 +9,5 @@ import {ExchangeService} from './exchange.service';
 export class ExchangeInternalController{
  constructor(private exchange:ExchangeService){}
  @Post('retention') @Roles('Admin') retention(@CurrentUser()u:UserContext,@Body()_body:unknown,@Req()req:Request){return this.exchange.retentionSweep(u,(req as Request & {correlationId:string}).correlationId);}
+ @Post('worker') @Roles('Admin') worker(@Body()body:{limit?:number}){const limit=Number(body?.limit??10);return this.exchange.processWorker(Number.isSafeInteger(limit)&&limit>0&&limit<=100?limit:10);}
 }

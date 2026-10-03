@@ -22,7 +22,7 @@ Commit `3a3909d53870ca5fb10ce964a61dc81d468e1623`，[CI 37099781355](https://git
 
 1. 完整來源日曆／資源 profile 的映射差異與決策 UI；不得無聲修改組織設定。
 2. 已交付：作業歷史、伺服器取消、掃描重試（同步端點，exchange_lifecycle.test.mjs），以及原檔／預覽保存期限清理（migration 0021 + Admin 維運端點 /internal/exchange/retention，exchange_retention.test.mjs）。不可變預覽 DELETE trigger 已與清理策略一併設計：受限權限旗標允許清掃刪除過期列，一般路徑仍不可改刪。作業歷史與稽核保留為清理證據。另補 outbox 積壓（>20 筆）持續消費整合測試（outbox.test.mjs）。
-3. 真正的非同步掃描／render worker 與重試，不能將目前同步服務稱為背景處理。
+3. 已交付：真正的非同步掃描／render worker（opt-in `Prefer: respond-async` → 202 + status_url；migration 0022 `exchange_worker_jobs` 佇列；租約認領與逾期回收、冪等、指數退避、最大重試、dead-letter；掃描與 render 均實際由背景 worker 執行）。同步 201 契約與回歸測試保留；掃描前禁預覽／提交、render 前禁下載；取消與保存期限清理與 worker 協調。前端加背景處理（輪詢）選項。整合測試 exchange_async.test.mjs（8 情境：接受、掃描完成、render 下載、驗證拒絕 dead、瞬時失敗重試→dead-letter、重複投遞冪等、worker 中斷恢復、取消競爭、scope/權限）。
 4. MSP XML 官方 schema 技術驗證與 go/no-go 報告；尚未支援 XML 或宣稱 Microsoft Project 桌面驗證。
 5. 其餘計畫驗收追溯與最終驗證證據；目前 API contract 見 OPENAPI_EXCHANGE.json，現行操作／掃描規格見 PHASE5_RUNBOOK.md。
 

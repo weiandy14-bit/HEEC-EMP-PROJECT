@@ -146,10 +146,12 @@ export async function saveGanttView(view:GanttFilters){
  if(!r.ok)throw new Error(`儲存檢視失敗 HTTP ${r.status}`);
 }
 
-export interface ExchangeJob{id:string;version:number;state:string;scan_state:string;result:{file_info?:{headers:string[];anchor_candidates:{key:string;name:string;wbs:string}[]}}}
+export interface ExchangeJob{id:string;version:number;state:string;scan_state:string;status_url?:string;result:{code?:string;file_info?:{headers:string[];anchor_candidates:{key:string;name:string;wbs:string}[]}}}
 export interface ExchangePreview{id:string;payload_hash:string;job_version:number;can_commit:boolean;task_count:number;issues:{row:number;field:string;code:string;message:string;severity:string}[];changes:{key:string;id:string;name:string;action:string;work?:number;resources?:string[]}[]}
 export async function exchangeRequest(path:string,method='GET',body?:unknown,extra:Record<string,string>={}){
  const form=body instanceof FormData;const r=await fetch('/api/v1'+path,{method,headers:{...devHeaders(),...(!form&&body!==undefined?{'Content-Type':'application/json'}:{}),...extra},body:body===undefined?undefined:form?body:JSON.stringify(body)});
  const data=await r.json().catch(()=>null);if(!r.ok)throw Object.assign(new Error(data?.message??`操作失敗 HTTP ${r.status}`),{status:r.status,code:data?.code});return data;
 }
+/** 非同步作業輪詢：重複 GET 狀態直到 done(j) 為真或逾時（前端反映 202 背景作業進度）。 */
+export async function pollExchange(path:string,done:(j:any)=>boolean,{attempts=40,interval=500}:{attempts?:number;interval?:number}={}){let last:any=null;for(let i=0;i<attempts;i++){last=await exchangeRequest(path);if(done(last))return last;await new Promise(r=>setTimeout(r,interval));}throw Object.assign(new Error('背景作業逾時，請稍後重新整理狀態'),{status:408,job:last});}
 export async function downloadExchange(project:string,job:string,format:string){const r=await fetch(`/api/v1/projects/${project}/exports/${job}/download`,{headers:devHeaders()});if(!r.ok)throw new Error(`下載失敗 HTTP ${r.status}`);const url=URL.createObjectURL(await r.blob());const link=document.createElement('a');link.href=url;link.download=`project-${job}.${format==='csv-package'?'zip':format}`;link.click();URL.revokeObjectURL(url);}

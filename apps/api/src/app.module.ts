@@ -1,3 +1,4 @@
+import {ExchangeModule} from './exchange/exchange.module';
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from './database/database.module';
 import { AuditModule } from './audit/audit.module';
@@ -28,6 +29,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     AlertsModule,
     OutboxModule,
     DashboardModule,
+    ExchangeModule,
   ],
 })
 export class AppModule {}

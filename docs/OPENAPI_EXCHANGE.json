@@ -1748,6 +1748,71 @@
           }
         }
       }
+    },
+    "/internal/exchange/retention": {
+      "post": {
+        "operationId": "exchangeRetentionSweep",
+        "tags": [
+          "Project Exchange"
+        ],
+        "description": "Admin maintenance: purge expired original/output files and delete expired immutable previews. Job history rows and audit are retained as cleanup evidence; file purge marks purged_at only on success (failed deletes retry on the next sweep); preview deletion runs under a transaction-local privilege the immutable-preview trigger honours, so ordinary paths can still never modify a preview.",
+        "responses": {
+          "201": {
+            "description": "Retention sweep summary.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "previews_deleted": {
+                      "type": "integer"
+                    },
+                    "import_files_purged": {
+                      "type": "integer"
+                    },
+                    "export_files_purged": {
+                      "type": "integer"
+                    },
+                    "import_files_failed": {
+                      "type": "integer"
+                    },
+                    "export_files_failed": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "previews_deleted",
+                    "import_files_purged",
+                    "export_files_purged",
+                    "import_files_failed",
+                    "export_files_failed"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role/identity denied (Admin only)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage/scanner unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

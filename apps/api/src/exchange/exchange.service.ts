@@ -45,6 +45,22 @@ export class ExchangeService{
   catch(e){await this.db.query(`UPDATE import_jobs SET scan_state='error',state='failed',result=$2,updated_by=$3 WHERE id=$1`,[j,JSON.stringify({code:e instanceof DomainError?e.code:'scan_unavailable'}),ctx.userId]);if(e instanceof ExchangeParseError)throw new DomainError('import',e.code,e.message);throw e;}
   return this.getImport(ctx,p,j);
  }
+ /** Retention sweep (Admin maintenance): purge expired original/output files and delete expired immutable previews.
+  * Job rows and audit are retained as cleanup evidence. File removal marks purged_at only on success, so a failed
+  * delete is retried on the next sweep. Preview deletion runs under a transaction-local privilege flag that the
+  * immutable-preview trigger honours; ordinary users and paths can still never UPDATE or DELETE a preview. */
+ async retentionSweep(ctx:UserContext,correlation:string){
+  const importFiles=await this.db.query<any>(`SELECT id,object_key FROM import_jobs WHERE org_id=$1 AND purged_at IS NULL AND object_key IS NOT NULL AND expires_at<now()`,[ctx.orgId]);
+  const purgedImports:string[]=[];for(const j of importFiles){try{await this.storage.purge(j.object_key);purgedImports.push(j.id);}catch{/* leave purged_at null for retry on the next sweep */}}
+  if(purgedImports.length)await this.db.query(`UPDATE import_jobs SET purged_at=now(),updated_by=$2 WHERE id=ANY($1::uuid[])`,[purgedImports,ctx.userId]);
+  const exportFiles=await this.db.query<any>(`SELECT id,output_key FROM export_jobs WHERE org_id=$1 AND purged_at IS NULL AND output_key IS NOT NULL AND expires_at<now()`,[ctx.orgId]);
+  const purgedExports:string[]=[];for(const j of exportFiles){try{await this.storage.purge(j.output_key);purgedExports.push(j.id);}catch{/* retry next sweep */}}
+  if(purgedExports.length)await this.db.query(`UPDATE export_jobs SET purged_at=now(),updated_by=$2 WHERE id=ANY($1::uuid[])`,[purgedExports,ctx.userId]);
+  const previews=await this.db.transaction(async c=>{await c.query(`SET LOCAL app.retention_sweep='on'`);const d=await c.query(`DELETE FROM import_preview_versions WHERE org_id=$1 AND expires_at<now() RETURNING id`,[ctx.orgId]);return d.rows.map((r:any)=>r.id);});
+  const summary={previews_deleted:previews.length,import_files_purged:purgedImports.length,export_files_purged:purgedExports.length,import_files_failed:importFiles.length-purgedImports.length,export_files_failed:exportFiles.length-purgedExports.length};
+  await this.db.transaction(async c=>{await this.audit.write(c,ctx,{entityType:'exchange_retention',action:'retention_sweep',diff:summary,correlationId:correlation});});
+  return summary;
+ }
  private publicJob(j:any){return{id:j.id,project_id:j.project_id,format:j.source_type,state:j.state,scan_state:j.scan_state,version:Number(j.version),result:j.result,created_at:j.created_at,expires_at:j.expires_at};}
  async getImport(ctx:UserContext,p:string,j:string){return this.publicJob(await this.job(this.connection(),ctx,p,j));}
  async options(ctx:UserContext,p:string){await this.project(this.connection(),ctx,p);return{anchors:await this.db.query("SELECT id,name FROM project_tasks WHERE project_id=$1 AND type='anchor' AND archived_at IS NULL",[p]),resources:await this.db.query('SELECT id,code,name FROM resources WHERE org_id=$1 AND archived_at IS NULL ORDER BY name',[ctx.orgId]),calendars:await this.db.query('SELECT id,name,hours_per_day,timezone FROM calendars WHERE org_id=$1 AND archived_at IS NULL',[ctx.orgId])};}

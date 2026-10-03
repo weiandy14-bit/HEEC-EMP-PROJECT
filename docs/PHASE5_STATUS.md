@@ -21,7 +21,7 @@ Commit `3a3909d53870ca5fb10ce964a61dc81d468e1623`，[CI 37099781355](https://git
 ## 尚未完成的 Phase 5 門檻
 
 1. 完整來源日曆／資源 profile 的映射差異與決策 UI；不得無聲修改組織設定。
-2. 原檔／預覽保存期限清理（與不可變預覽 DELETE trigger 的清理策略一併設計）。作業歷史、伺服器取消與掃描重試已交付（同步端點，見 PHASE5_RUNBOOK.md 與 OPENAPI_EXCHANGE.json；整合測試 exchange_lifecycle.test.mjs）；期限清理仍待完成。
+2. 已交付：作業歷史、伺服器取消、掃描重試（同步端點，exchange_lifecycle.test.mjs），以及原檔／預覽保存期限清理（migration 0021 + Admin 維運端點 /internal/exchange/retention，exchange_retention.test.mjs）。不可變預覽 DELETE trigger 已與清理策略一併設計：受限權限旗標允許清掃刪除過期列，一般路徑仍不可改刪。作業歷史與稽核保留為清理證據。另補 outbox 積壓（>20 筆）持續消費整合測試（outbox.test.mjs）。
 3. 真正的非同步掃描／render worker 與重試，不能將目前同步服務稱為背景處理。
 4. MSP XML 官方 schema 技術驗證與 go/no-go 報告；尚未支援 XML 或宣稱 Microsoft Project 桌面驗證。
 5. 其餘計畫驗收追溯與最終驗證證據；目前 API contract 見 OPENAPI_EXCHANGE.json，現行操作／掃描規格見 PHASE5_RUNBOOK.md。

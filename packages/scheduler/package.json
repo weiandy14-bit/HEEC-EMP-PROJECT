@@ -1,0 +1,25 @@
+{
+  "name": "@heec/scheduler",
+  "version": "1.0.0",
+  "description": "MEP 專案排程核心（純函式；工作時間、相依界限、CPM）",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "import": "./src/index.ts"
+    }
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node -e \"require('fs').writeFileSync('dist/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\"",
+    "test": "node --test 'test/**/*.test.ts'",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit"
+  },
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}

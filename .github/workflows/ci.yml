@@ -1,0 +1,134 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    # 全新 PostgreSQL（每次 job 重新建立），供 migration/seed/smoke 使用
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: empdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/empdb
+      PORT: "3000"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # build 先行：產生 scheduler dist，供 api typecheck/build 與 smoke 執行期解析（含前端 web 建置）
+      - name: Build (scheduler + api + web)
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests (scheduler)
+        run: npm test
+
+      - name: Web unit tests (頁 A 甘特 UI 與 UI 狀態)
+        run: npm run test:web
+
+      - name: Install E2E browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser E2E (1280x720 and 1920x1080)
+        run: npm run test:e2e -w @heec/web
+
+      - name: Browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-browser-evidence
+          path: |
+            apps/web/test-results
+            apps/web/playwright-report
+          retention-days: 14
+
+      - name: Install PostgreSQL client
+        run: |
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y postgresql-client
+          fi
+          psql --version
+
+      - name: Apply migrations (fresh database)
+        run: bash db/apply.sh
+
+      - name: Seed development data
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/seed_dev.sql
+
+      - name: DB rule tests (G9 baseline immutability, G10 actual consistency)
+        run: bash db/run-tests.sh
+
+      - name: Start API
+        run: |
+          node apps/api/dist/main.js > /tmp/api.log 2>&1 &
+          echo "API_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 40); do
+            if curl -fsS "http://localhost:${PORT}/api/v1/health" >/dev/null 2>&1; then
+              echo "API is up"; break
+            fi
+            sleep 1
+          done
+          curl -fsS "http://localhost:${PORT}/api/v1/health"
+
+      - name: API integration tests (Phase 3)
+        run: BASE="http://localhost:${PORT}/api/v1" npm run test:integration -w @heec/api
+
+      - name: End-to-end smoke test
+        run: BASE="http://localhost:${PORT}/api/v1" bash scripts/smoke.sh
+
+      - name: Live dashboard performance (50 / 500 projects, 2.5M tasks)
+        run: BASE="http://localhost:${PORT}/api/v1" node scripts/performance/dashboard.mjs
+
+      - name: Performance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-performance-evidence
+          path: performance-results
+          retention-days: 14
+
+      - name: API logs (on failure)
+        if: failure()
+        run: cat /tmp/api.log || true
+
+      - name: Stop API
+        if: always()
+        run: '[ -n "${API_PID:-}" ] && kill "$API_PID" 2>/dev/null || true'

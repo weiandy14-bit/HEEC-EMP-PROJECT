@@ -1,0 +1,29 @@
+{
+  "name": "heec-emp-project",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MEP 機電設計專案管理系統（monorepo）",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:scheduler": "npm run build -w @heec/scheduler",
+    "build:api": "npm run build:scheduler && npm run build -w @heec/api",
+    "build:web": "npm run build -w @heec/web",
+    "build": "npm run build:api && npm run build:web",
+    "lint": "eslint packages/scheduler/src packages/scheduler/test apps/api/src",
+    "typecheck": "npm run typecheck -w @heec/scheduler && npm run typecheck -w @heec/api && npm run typecheck -w @heec/web",
+    "test": "npm run test -w @heec/scheduler",
+    "test:scheduler": "npm run test -w @heec/scheduler",
+    "test:web": "npm run test -w @heec/web"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^22.7.0",
+    "eslint": "^9.39.5",
+    "globals": "^17.12.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.71.0"
+  }
+}

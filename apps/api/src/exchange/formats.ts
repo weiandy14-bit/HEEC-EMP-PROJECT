@@ -1,3 +1,4 @@
+import {readCsvPackage} from './csv-package';
 import {parse} from 'csv-parse/sync';
 import {stringify} from 'csv-stringify/sync';
 import ExcelJS from 'exceljs';
@@ -46,7 +47,7 @@ export async function readXlsx(bytes:Buffer):Promise<Record<string,SheetRow[]>>{
   }sheets[sheet.name]=rows;
  }if(!sheets.Tasks)throw new ExchangeParseError('tasks_missing','XLSX 須有 Tasks 工作表');return sheets;
 }
-export async function readTables(bytes:Buffer,options:ParseOptions):Promise<Record<string,SheetRow[]>>{if(bytes.length>LIMITS.bytes)throw new ExchangeParseError('file_limit','檔案超過10 MiB');return options.format==='csv'?{Tasks:readCsv(bytes,options)}:readXlsx(bytes);}
+export async function readTables(bytes:Buffer,options:ParseOptions):Promise<Record<string,SheetRow[]>>{if(bytes.length>LIMITS.bytes)throw new ExchangeParseError('file_limit','檔案超過10 MiB');return options.format==='csv-package'?readCsvPackage(bytes,options):options.format==='csv'?{Tasks:readCsv(bytes,options)}:readXlsx(bytes);}
 export function protectText(value:string):string{let i=0;while(i<value.length&&(value.charCodeAt(i)<=32||/\s/.test(value[i])))i++;return "=+-@".includes(value[i]??" ")||value.startsWith("'")?"'"+value:value;}
 export function writeCsv(rows:SheetRow[],columns:string[]):Buffer{return Buffer.from('\ufeff'+stringify(rows,{header:true,columns,record_delimiter:'\r\n',cast:{string:(s,ctx)=>ctx.header?s:protectText(s)}}),'utf8');}
 export async function writeXlsx(sheets:Record<string,{columns:string[];rows:SheetRow[]}>):Promise<Buffer>{const book=new ExcelJS.Workbook();for(const [name,{columns,rows}]of Object.entries(sheets)){const sheet=book.addWorksheet(name);sheet.addRow(columns);for(const row of rows)sheet.addRow(columns.map(c=>row[c]??''));sheet.views=[{state:'frozen',ySplit:1}];}return Buffer.from(await book.xlsx.writeBuffer());}

@@ -1,5 +1,5 @@
 import {IsIn,IsOptional,IsString,MaxLength,IsObject,IsUUID,IsBoolean,IsArray} from 'class-validator';
-export class UploadDto{@IsIn(['csv','xlsx','csv-package']) format:'csv'|'xlsx'|'csv-package';@IsOptional() @IsString() @MaxLength(100) timezone?:string;@IsOptional() @IsIn(['utf-8','big5']) encoding?:'utf-8'|'big5';}
+export class UploadDto{@IsIn(['csv','xlsx','csv-package']) format:'csv'|'xlsx'|'csv-package';@IsOptional() @IsString() @MaxLength(100) timezone?:string;@IsOptional() @IsIn(['utf-8','big5']) encoding?:'utf-8'|'big5';@IsOptional() @IsString() @MaxLength(1) delimiter?:string;}
 export class PreviewDto{
  @IsOptional() @IsIn(['create-only','upsert']) mode?:'create-only'|'upsert';
  @IsOptional() @IsObject() mapping?:Record<string,string>;

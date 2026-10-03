@@ -177,3 +177,5 @@ table.days thead th { background: var(--panel); color: var(--muted); }
 .project-summary { display:flex; flex-wrap:wrap; gap:8px; max-height:70px; overflow:auto; padding:6px 12px; flex-shrink:0; font-size:12px; }
 .bar-progress { background:#14532d; top:17px; height:3px; }
 .saved-view { display:flex; gap:8px; padding:4px 12px; flex-shrink:0; }
+
+.exchange-page{overflow:auto;padding:16px;flex:1;color:#17334f;background:white;min-height:0}.exchange-page h1{font-size:20px}.exchange-page h2{font-size:17px}.exchange-page section{border:1px solid #cbd5e1;padding:12px;margin:12px 0}.exchange-page label{display:inline-flex;gap:8px;align-items:center;margin:6px;flex-wrap:wrap}.exchange-page select,.exchange-page input{max-width:260px}.exchange-mapping{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:4px}.exchange-page button{margin:6px}.exchange-page [role=alert]{border-left:4px solid #b91c1c;padding:8px}

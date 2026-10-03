@@ -145,3 +145,11 @@ export async function saveGanttView(view:GanttFilters){
  const r=await fetch('/api/v1/dashboard/gantt/view',{method:'PUT',headers:{...devHeaders(),'Content-Type':'application/json'},body:JSON.stringify(view)});
  if(!r.ok)throw new Error(`儲存檢視失敗 HTTP ${r.status}`);
 }
+
+export interface ExchangeJob{id:string;version:number;state:string;scan_state:string;result:{file_info?:{headers:string[];anchor_candidates:{key:string;name:string;wbs:string}[]}}}
+export interface ExchangePreview{id:string;payload_hash:string;job_version:number;can_commit:boolean;task_count:number;issues:{row:number;field:string;code:string;message:string;severity:string}[];changes:{key:string;id:string;name:string;action:string;work?:number;resources?:string[]}[]}
+export async function exchangeRequest(path:string,method='GET',body?:unknown,extra:Record<string,string>={}){
+ const form=body instanceof FormData;const r=await fetch('/api/v1'+path,{method,headers:{...devHeaders(),...(!form&&body!==undefined?{'Content-Type':'application/json'}:{}),...extra},body:body===undefined?undefined:form?body:JSON.stringify(body)});
+ const data=await r.json().catch(()=>null);if(!r.ok)throw Object.assign(new Error(data?.message??`操作失敗 HTTP ${r.status}`),{status:r.status,code:data?.code});return data;
+}
+export async function downloadExchange(project:string,job:string,format:string){const r=await fetch(`/api/v1/projects/${project}/exports/${job}/download`,{headers:devHeaders()});if(!r.ok)throw new Error(`下載失敗 HTTP ${r.status}`);const url=URL.createObjectURL(await r.blob());const link=document.createElement('a');link.href=url;link.download=`project-${job}.${format}`;link.click();URL.revokeObjectURL(url);}

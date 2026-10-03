@@ -17,4 +17,26 @@ test('P5 不可變預覽、多人Work未決策阻擋',async()=>{const p=await cr
 test('P5 scope Viewer/跨案job/同upload key異payload',async()=>{const p=await createProject(),other=await createProject(),rows=source();assert.equal((await upload(p,rows,randomUUID(),'Viewer')).status,403);const key=randomUUID(),u=await upload(p,rows,key);assert.equal((await api('GET',`/projects/${other}/imports/${u.body.id}`)).status,404);rows[0]['Task Name']='changed';assert.equal((await upload(p,rows,key)).status,409);});
 test('P5 XLSX import→export→parse round-trip包含Work及階層',async()=>{const p=await createProject(),rows=source(),u=await upload(p,rows,randomUUID(),'PM','xlsx'),v=await preview(p,u.body,rows);assert.equal(v.body.can_commit,true,JSON.stringify(v.body));assert.equal((await commit(p,u.body,v.body)).body.state,'succeeded');const r=await fetch(BASE+`/projects/${p}/exports`,{method:'POST',headers:{...headers('PM'),'Idempotency-Key':randomUUID()},body:JSON.stringify({format:'xlsx'})});const e=await r.json();assert.equal(r.status,201,JSON.stringify(e));const file=await fetch(BASE+`/projects/${p}/exports/${e.id}/download`,{headers:headers('PM')});assert.equal(file.status,200);const {parseExchange}=require('../../dist/exchange/parser.js');const parsed=await parseExchange(Buffer.from(await file.arrayBuffer()),{format:'xlsx',timezone:'Asia/Taipei',hoursPerDay:8});assert.deepEqual(parsed.issues,[]);assert.equal(parsed.tasks.length,2);assert.equal(parsed.tasks[0].work,480);assert.equal(parsed.dependencies.length,1);});
 test('P5 來源日期違反FS時不提交',async()=>{const p=await createProject(),rows=source();rows[0].Finish='2027-01-12T18:00+08:00';const u=await upload(p,rows),v=await preview(p,u.body,rows);assert.ok(v.body.issues.some(x=>x.code==='anchor_conflict'));assert.equal(v.body.can_commit,false);});
+
+
+test('P5 半途DB拒絕：前一列/身分/指派/outbox全部回滾，保留失敗稽核',async()=>{
+ const p=await createProject(),rows=source(),u=await upload(p,rows),v=await preview(p,u.body,rows);assert.equal(v.body.can_commit,true,JSON.stringify(v.body));
+ const suffix=randomUUID().replaceAll('-',''),fn='exchange_fault_'+suffix,tr='exchange_fault_'+suffix;
+ try{
+  await db().query(`CREATE FUNCTION ${fn}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.project_id='${p}'::uuid AND NEW.wbs_code='0.0' THEN RAISE EXCEPTION 'test injected second row failure'; END IF; RETURN NEW; END $$`);
+  await db().query(`CREATE TRIGGER ${tr} BEFORE INSERT ON project_tasks FOR EACH ROW EXECUTE FUNCTION ${fn}()`);
+  const c=await commit(p,u.body,v.body);assert.equal(c.status,422,JSON.stringify(c.body));assert.equal(c.body.code,'import_failed');
+  for(const table of ['project_tasks','external_id_map','resource_assignments','task_dependencies'])assert.equal((await db().query(`SELECT count(*)::int n FROM ${table} WHERE project_id=$1`,[p])).rows[0].n,0,table);
+  assert.equal((await db().query("SELECT count(*)::int n FROM job_outbox WHERE aggregate_id=$1 AND type='import.committed'",[p])).rows[0].n,0);
+  assert.equal((await db().query("SELECT count(*)::int n FROM audit_logs WHERE entity_id=$1 AND action='commit_failed'",[u.body.id])).rows[0].n,1);
+ }finally{await db().query(`DROP TRIGGER IF EXISTS ${tr} ON project_tasks`);await db().query(`DROP FUNCTION IF EXISTS ${fn}()`);}
+});
+test('P5 upsert未提供Notes/Start/Finish不得清空既有值，既有相依保留',async()=>{
+ const p=await createProject(),rows=source();rows[0].Notes='保留說明';let u=await upload(p,rows),v=await preview(p,u.body,rows);assert.equal((await commit(p,u.body,v.body)).body.state,'succeeded');
+ const columns=['Task Name','WBS','Outline Level','Duration','Unique ID','GUID'];const reduced=rows.map(r=>({...r,'Task Name':r['Task Name']+'新名稱'}));
+ const form=new FormData();form.append('file',new Blob([writeCsv(reduced,columns)]),'project.csv');form.append('format','csv');const h=headers('PM');delete h['Content-Type'];h['Idempotency-Key']=randomUUID();const response=await fetch(BASE+`/projects/${p}/imports`,{method:'POST',headers:h,body:form});u={body:await response.json()};assert.equal(response.status,201);
+ v=await preview(p,u.body,reduced,{mode:'upsert'});assert.equal(v.body.can_commit,true,JSON.stringify(v.body));const c=await commit(p,u.body,v.body);assert.equal(c.body.state,'succeeded',JSON.stringify(c.body));
+ const stored=(await db().query("SELECT * FROM project_tasks WHERE project_id=$1 AND wbs_code='1'",[p])).rows[0];assert.equal(stored.notes,'保留說明');assert.equal(new Date(stored.planned_start).toISOString(),'2027-01-08T01:00:00.000Z');assert.equal(stored.unassigned_work_minutes,480);
+ assert.equal((await db().query('SELECT count(*)::int n FROM task_dependencies WHERE project_id=$1 AND archived_at IS NULL',[p])).rows[0].n,1);
+});
 test.after(()=>closeDb());

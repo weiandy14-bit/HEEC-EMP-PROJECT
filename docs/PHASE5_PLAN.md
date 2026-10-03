@@ -1,6 +1,6 @@
 # Phase 5 — Microsoft Project 匯入／匯出計畫
 
-狀態：**計畫待確認，尚未實作交換流程**。基線 main `4c0fcf4a`，Phase 4 已驗收並合併；依 Master Prompt §16「每一階段先提出計畫與驗收案例，獲確認後再實作」。本文件不宣稱 Phase 5 已完成。
+狀態：**業主已確認，實作與驗證進行中**。基線 main `4c0fcf4a`，Phase 4 已驗收並合併；依 Master Prompt §16「每一階段先提出計畫與驗收案例，獲確認後再實作」。本文件不宣稱 Phase 5 已完成。
 
 ## 1. 範圍與現況
 
@@ -8,11 +8,11 @@
 
 MSP XML：先做技術驗證，通過 schema／Tasks／Resources／Assignments／Calendars 與 round-trip 門檻即納入；未通過則保留具體阻塞報告與業主決策，不以副檔名或自製 XML 宣稱相容。二進位 `.mpp` 不在本階段。
 
-已存在：`import_jobs`、`export_jobs`、`external_id_map`、`resource_aliases`、不可變 Baseline、job_outbox、AuditService、org/project scope 與排程引擎。尚無 Project 交換 controller/service/UI；頁 C 的負荷 CSV 不是 Project 工作交換。
+已存在：`import_jobs`、`export_jobs`、`external_id_map`、`resource_aliases`、不可變 Baseline、job_outbox、AuditService、org/project scope 與排程引擎。Project 交換 controller/service/UI 已建立於 PR #2；完整完成定義仍依本計畫逐項驗證。頁 C 的負荷 CSV 不取代 Project 工作交換。
 
 不改動：掛件錨定、已核定排程規則、實績保留、Baseline 不可變、逐案法定審查適用性、即時 Dashboard SQL。
 
-## 2. 重要設計決策（需確認）
+## 2. 重要設計決策（已確認）
 
 | 決策 | 建議方案 | 替代方案 | 理由、影響與確認事項 |
 |---|---|---|---|

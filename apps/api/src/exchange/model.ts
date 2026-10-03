@@ -1,6 +1,8 @@
 export const TASK_COLUMNS = ['Task Name','WBS','Outline Level','Start','Finish','Duration','Predecessors','Resource Names','Work','% Complete','Baseline Start','Baseline Finish','Milestone','Constraint Type','Constraint Date','Notes','Unique ID','GUID'] as const;
 export const EXTRA_COLUMNS=['ID','Actual Start','Actual Finish','Remaining Duration','System Code','Calendar Code','Summary','External Project','Task Type'] as const;
 export const SCHEMA_VERSION=1;
+/** Increment whenever normalization or commit semantics change; keep file schema separate. */
+export const PARSER_VERSION=2;
 export const LIMITS={bytes:10*1024*1024,expandedBytes:100*1024*1024,entries:10000,tasks:5000,edges:20000,assignments:20000,record:1024*1024};
 export type SheetRow=Record<string,string>;
 export interface Issue{row:number;field:string;code:string;message:string;severity:'error'|'warning'}

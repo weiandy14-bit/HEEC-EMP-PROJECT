@@ -6,14 +6,14 @@ import {Roles,RolesGuard} from '../auth/roles.guard';
 import {DomainError} from '../common/errors';
 import {ExchangeService} from './exchange.service';
 import {UploadDto,PreviewDto,CommitDto,ExportDto,RoundTripDto} from './dto';
-import {TASK_COLUMNS,EXTRA_COLUMNS,LIMITS,SCHEMA_VERSION} from './model';
+import {TASK_COLUMNS,EXTRA_COLUMNS,LIMITS,SCHEMA_VERSION,PARSER_VERSION} from './model';
 function version(v:string|undefined){const n=Number(v?.replace(/"/g,''));if(!v||!Number.isSafeInteger(n)||n<1)throw DomainError.validation('須提供有效If-Match');return n;}
 @Controller({path:'projects/:p',version:'1'})
 @UseGuards(AuthGuard,RolesGuard)
 @Roles('PM','Admin')
 export class ExchangeController{
  constructor(private exchange:ExchangeService){}
- @Get('exchange/schema') async schema(@CurrentUser()u:UserContext,@Param('p',ParseUUIDPipe)p:string){await this.exchange.options(u,p);return{version:SCHEMA_VERSION,columns:TASK_COLUMNS,extras:EXTRA_COLUMNS,limits:LIMITS,formats:['csv','xlsx','csv-package']};}
+ @Get('exchange/schema') async schema(@CurrentUser()u:UserContext,@Param('p',ParseUUIDPipe)p:string){await this.exchange.options(u,p);return{version:SCHEMA_VERSION,parser_version:PARSER_VERSION,columns:TASK_COLUMNS,extras:EXTRA_COLUMNS,limits:LIMITS,formats:['csv','xlsx','csv-package']};}
  @Get('exchange/options') options(@CurrentUser()u:UserContext,@Param('p',ParseUUIDPipe)p:string){return this.exchange.options(u,p);}
  @Post('imports') @UseInterceptors(FileInterceptor('file',{limits:{fileSize:LIMITS.bytes,files:1,fields:5}}))
  upload(@CurrentUser()u:UserContext,@Param('p',ParseUUIDPipe)p:string,@UploadedFile()file:Express.Multer.File,@Body()dto:UploadDto,@Headers('idempotency-key')key:string|undefined,@Req()req:Request){if(!file)throw DomainError.validation('請上傳檔案');if(!file.originalname.toLowerCase().endsWith('.'+(dto.format==='csv-package'?'zip':dto.format))||!['application/zip','text/csv','text/plain','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/octet-stream'].includes(file.mimetype))throw DomainError.validation('檔案副檔名或MIME不符');if(dto.format!=='csv'&&file.buffer.subarray(0,4).toString('hex')!=='504b0304')throw DomainError.validation('XLSX signature不符');return this.exchange.upload(u,p,file.buffer,dto,key,(req as Request & {correlationId:string}).correlationId);}

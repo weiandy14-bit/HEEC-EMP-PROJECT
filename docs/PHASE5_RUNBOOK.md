@@ -8,7 +8,15 @@
 5. 提交做版本與冪等檢查；SQL 半途失敗回滾業務變更，保留失敗稽核。
 6. 匯出與 round-trip JSON 報告列出逐欄差異。單檔 CSV 無法保存完整指派與基準；XLSX/CSV package 包含完整交換工作表。
 
-現在是同步 201；真正非同步 worker、202、歷史、取消、掃描重試與期限清理仍待完成，見 PHASE5_STATUS.md。
+現在是同步 201。作業歷史（GET /imports、GET /exports，新到舊、分頁、不外洩儲存鍵）、伺服器取消（POST /imports/{j}/cancel，If-Match 版本鎖、移除原檔、冪等、已提交不可取消）與掃描重試（POST /imports/{j}/scan-retry，僅 scan_state=error 可重試、fail-closed 不旁路、If-Match 版本鎖）已交付。真正非同步 worker、202 與原檔／預覽期限清理仍待完成，見 PHASE5_STATUS.md。
+
+### 作業控制故障處理
+| 錯誤 | 處理 |
+|---|---|
+| version_conflict（cancel／scan-retry） | 讀最新 job 版本，重帶 If-Match 再操作，不硬覆蓋 |
+| job_not_cancellable | 已 succeeded／failed 的作業不可取消；如需重做請重新上傳 |
+| job_cancelled | 作業已取消，請以新 Idempotency-Key 重新上傳 |
+| scan_not_retryable | 僅掃描不可用（scan_state=error）的作業可重試；clean 作業請直接預覽 |
 
 ## 掃描與私有檔案
 - EXCHANGE_STORAGE_DIR 指向私有服務目錄，不映射公開靜態網站；新目錄 0700、新檔 0600。

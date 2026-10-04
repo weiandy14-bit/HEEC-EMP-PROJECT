@@ -1441,6 +1441,12 @@
                   "type": "string",
                   "format": "binary"
                 }
+              },
+              "application/xml": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
               }
             }
           },
@@ -1984,7 +1990,8 @@
             "enum": [
               "csv",
               "xlsx",
-              "csv-package"
+              "csv-package",
+              "xml"
             ]
           },
           "timezone": {
@@ -2124,7 +2131,8 @@
             "enum": [
               "csv",
               "xlsx",
-              "csv-package"
+              "csv-package",
+              "xml"
             ]
           },
           "baselineId": {

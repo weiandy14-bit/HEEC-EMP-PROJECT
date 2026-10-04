@@ -2,7 +2,7 @@
 
 ## 現有流程
 1. PM/Admin 選擇有權限案件，確認掛件日、工作日曆。
-2. 選 CSV、XLSX 或 CSV package；CSV 明確指定 UTF-8/Big5、分隔符與來源時區；純日期指定起訖時間，不猜 locale。
+2. 選 CSV、XLSX、CSV package 或 MSP XML；CSV 明確指定 UTF-8/Big5、分隔符與來源時區；純日期指定起訖時間，不猜 locale。XML 為 MSP XML Data Interchange：拒絕 DTD/外部實體（XXE）與跨案；LinkLag 為十分之一分鐘、ConstraintType 0..7、ISO-8601 工期整分鐘（小數精度報錯）；本系統匯出 XML 為 UTF-8/UTC，再匯入宣告 timezone=UTC。桌面 Microsoft Project 相容性待 UAT，見 docs/PHASE5_XML_GONOGO.md。
 3. 掃描成功後確認欄位／資源映射、ID/UID 模式及掛件錨點；多人 Work 總和須一致，未知／歧義資源不得選第一筆。預覽回傳來源日曆／資源 profile 對照（`profiles`）：操作頁以對照表明示時區／每日工時／容量／未對應差異，提供日曆（calendarMap）與資源（resourceMap）對應選擇；差異須確認警告後再提交，匯入不修改組織日曆時區或資源容量。
 4. 預覽不寫入業務資料；修正錯誤、確認警告後重產預覽。來源與決策改動不得沿用舊 hash。
 5. 提交做版本與冪等檢查；SQL 半途失敗回滾業務變更，保留失敗稽核。

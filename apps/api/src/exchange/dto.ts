@@ -1,5 +1,5 @@
 import {IsIn,IsOptional,IsString,MaxLength,IsObject,IsUUID,IsBoolean,IsArray} from 'class-validator';
-export class UploadDto{@IsIn(['csv','xlsx','csv-package']) format:'csv'|'xlsx'|'csv-package';@IsOptional() @IsString() @MaxLength(100) timezone?:string;@IsOptional() @IsIn(['utf-8','big5']) encoding?:'utf-8'|'big5';@IsOptional() @IsString() @MaxLength(1) delimiter?:string;}
+export class UploadDto{@IsIn(['csv','xlsx','csv-package','xml']) format:'csv'|'xlsx'|'csv-package'|'xml';@IsOptional() @IsString() @MaxLength(100) timezone?:string;@IsOptional() @IsIn(['utf-8','big5']) encoding?:'utf-8'|'big5';@IsOptional() @IsString() @MaxLength(1) delimiter?:string;}
 export class PreviewDto{
  @IsOptional() @IsIn(['create-only','upsert']) mode?:'create-only'|'upsert';
  @IsOptional() @IsObject() mapping?:Record<string,string>;
@@ -19,6 +19,6 @@ export class PreviewDto{
  @IsOptional() @IsBoolean() activateBaseline?:boolean;
 }
 export class CommitDto{@IsUUID() previewId:string;@IsString() @MaxLength(64) previewHash:string;}
-export class ExportDto{@IsIn(['csv','xlsx','csv-package']) format:'csv'|'xlsx'|'csv-package';@IsOptional() @IsUUID() baselineId?:string;}
+export class ExportDto{@IsIn(['csv','xlsx','csv-package','xml']) format:'csv'|'xlsx'|'csv-package'|'xml';@IsOptional() @IsUUID() baselineId?:string;}
 
 export class RoundTripDto{@IsUUID() exportJobId:string;}

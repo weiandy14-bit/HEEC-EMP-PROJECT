@@ -140,3 +140,18 @@ jobs:
       - name: Stop API
         if: always()
         run: '[ -n "${API_PID:-}" ] && kill "$API_PID" 2>/dev/null || true'
+
+  docker-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate compose config
+        run: docker compose config >/dev/null
+
+      - name: Build API image
+        run: docker build -f Dockerfile -t heec-api:ci .
+
+      - name: Build web image
+        run: docker build -f deploy/web.Dockerfile -t heec-web:ci .

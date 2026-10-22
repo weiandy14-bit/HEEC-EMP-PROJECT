@@ -67,14 +67,15 @@
 見 `apps/api/README.md`。已實作 health、projects、tasks、dependencies、
 schedule-runs，並以 `scripts/smoke.sh` 端到端驗證。
 
-## 後續階段（未於本次交付）
+## 階段交付狀態
 
-- 3 流程：審查/交付/會議/週工作/警示 API 與規則引擎
-- 4 UI：三頁 Dashboard（總控甘特 / 本週 / 四週負荷）
-- 5 交換：CSV/XLSX 匯入預覽與原子提交、匯出、round-trip 報告
-- 6 上線：OIDC 實接、RLS、可觀測性、備份/PITR、負載測試
-- 資源負荷計算（capacity_week、rate、衝突分級）與 baseline API
-- OpenAPI 3.1 產生與 contract 測試
+- 3 流程：審查/交付/會議/週工作/警示 API 與規則引擎 — ✅ 已交付
+- 4 UI：三頁 Dashboard（總控甘特 / 本週 / 四週負荷）— ✅ 已交付（docs/PHASE4_ACCEPTANCE.md）
+- 5 交換：CSV/XLSX/CSV package/MSP XML 匯入預覽與原子提交、匯出、round-trip 報告 — ✅ 已交付（docs/PHASE5_ACCEPTANCE.md）
+- 6 上線：OIDC 實接、RLS、可觀測性、備份/PITR、可攜式部署、負載測試骨架 — ✅ 技術交付（docs/PHASE6_ACCEPTANCE.md）；
+  執行期 RLS app_rw 接線、真實雲端 provision、300 併發實測與桌面 UAT 為剩餘項。
+
+後續：資源負荷計算（capacity_week、rate、衝突分級）細化、OpenAPI 3.1 產生與 contract 測試。
 
 ## 待業主裁決
 

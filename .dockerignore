@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+**/dist
+.git
+.github
+*.log
+.exchange-files
+.env
+.env.*
+coverage
+docs/evidence
+**/*.test.mjs
+**/test
+playwright-report
+test-results

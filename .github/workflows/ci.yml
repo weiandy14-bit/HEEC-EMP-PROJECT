@@ -66,6 +66,9 @@ jobs:
       - name: Project exchange parser tests
         run: npm run test:exchange -w @heec/api
 
+      - name: Auth unit tests (OIDC JWT/JWKS verification)
+        run: npm run test:auth -w @heec/api
+
       - name: Web unit tests (頁 A 甘特 UI 與 UI 狀態)
         run: npm run test:web
 
@@ -122,6 +125,9 @@ jobs:
       - name: Live dashboard performance (50 / 500 projects, 2.5M tasks)
         run: BASE="http://localhost:${PORT}/api/v1" node scripts/performance/dashboard.mjs
 
+      - name: Concurrent load harness smoke
+        run: BASE="http://localhost:${PORT}/api/v1" LOAD_VUS=50 LOAD_DURATION_S=8 node scripts/performance/load.mjs
+
       - name: Performance evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -137,3 +143,18 @@ jobs:
       - name: Stop API
         if: always()
         run: '[ -n "${API_PID:-}" ] && kill "$API_PID" 2>/dev/null || true'
+
+  docker-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate compose config
+        run: docker compose config >/dev/null
+
+      - name: Build API image
+        run: docker build -f Dockerfile -t heec-api:ci .
+
+      - name: Build web image
+        run: docker build -f deploy/web.Dockerfile -t heec-web:ci .

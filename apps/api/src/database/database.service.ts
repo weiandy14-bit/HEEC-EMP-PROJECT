@@ -1,5 +1,6 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Pool, types, type PoolClient, type QueryResultRow } from 'pg';
+import { currentOrgId, rlsEnforced } from '../common/org-context';
 
 // DATE(oid 1082) 以原字串回傳（避免時區位移），保持 'YYYY-MM-DD' 語義。
 types.setTypeParser(1082, (v) => v);
@@ -22,10 +23,37 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     await this.pool?.end();
   }
 
+  /**
+   * 執行期 RLS 強制時，每次查詢在自己的 client 上以短交易設定 app.current_org
+   * （SET LOCAL，交易結束自動還原，不外洩；每查詢獨立 client，可與並行查詢共存）。
+   * 關閉強制（預設）時走連線池，行為與先前一致。
+   */
+  private enforceOrg(): string | undefined {
+    return rlsEnforced() ? currentOrgId() : undefined;
+  }
+
+  private async scoped<T>(orgId: string, fn: (c: PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query("SELECT set_config('app.current_org', $1, true)", [orgId]);
+      const result = await fn(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   async query<T extends QueryResultRow = QueryResultRow>(
     text: string,
     params: unknown[] = [],
   ): Promise<T[]> {
+    const orgId = this.enforceOrg();
+    if (orgId) return this.scoped(orgId, async (c) => (await c.query<T>(text, params as any[])).rows);
     const res = await this.pool.query<T>(text, params as any[]);
     return res.rows;
   }
@@ -38,11 +66,20 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     return rows[0] ?? null;
   }
 
-  /** 於單一交易內執行；自動 commit/rollback。 */
-  async transaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  /**
+   * 於單一交易內執行；自動 commit/rollback。
+   * 傳入 orgId 時，於交易內設定 app.current_org（SET LOCAL），使 row-level
+   * security 政策生效——正式環境以最小權限角色 app_rw 連線時，此 GUC 決定可見列
+   * （見 migration 0023）。GUC 為交易區域變數，交易結束即還原，不會外洩至連線池。
+   */
+  async transaction<T>(fn: (client: PoolClient) => Promise<T>, opts?: { orgId?: string }): Promise<T> {
+    const orgId = opts?.orgId ?? this.enforceOrg();
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      if (orgId) {
+        await client.query("SELECT set_config('app.current_org', $1, true)", [orgId]);
+      }
       const result = await fn(client);
       await client.query('COMMIT');
       return result;
@@ -52,6 +89,11 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     } finally {
       client.release();
     }
+  }
+
+  /** 以指定組織的 RLS 脈絡執行一段交易工作。 */
+  withOrg<T>(orgId: string, fn: (client: PoolClient) => Promise<T>): Promise<T> {
+    return this.transaction(fn, { orgId });
   }
 
   async healthy(): Promise<boolean> {

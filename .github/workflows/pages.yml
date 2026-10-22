@@ -1,0 +1,64 @@
+name: Deploy web to GitHub Pages
+
+# 部署前端 SPA（apps/web）到 GitHub Pages 靜態站。
+# 注意：Pages 僅服務靜態前端；API 與 PostgreSQL 需另行託管（見 docs/PHASE6_DEPLOY.md）。
+# 因此此站可展示操作頁 UI，但在未接上後端前，資料／匯入匯出操作不會運作。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 一次只跑一個部署；不取消進行中的部署。
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build SPA (base = repo subpath)
+        run: npm run build:web
+        env:
+          VITE_BASE: /${{ github.event.repository.name }}/
+
+      - name: Disable Jekyll processing
+        run: touch apps/web/dist/.nojekyll
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

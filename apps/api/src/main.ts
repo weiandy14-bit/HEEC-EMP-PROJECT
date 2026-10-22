@@ -5,9 +5,13 @@ import { AppModule } from './app.module';
 import { HttpErrorFilter } from './common/http-error.filter';
 import { CorrelationMiddleware } from './common/correlation.middleware';
 import { RequestLogMiddleware } from './common/request-log.middleware';
+import { OrgContextMiddleware } from './common/org-context.middleware';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: false });
+
+  // 請求範圍組織脈絡（供執行期 RLS 強制）——須在路由/守衛之前
+  app.use(new OrgContextMiddleware().use);
 
   // 全鏈 X-Correlation-ID
   app.use(new CorrelationMiddleware().use);

@@ -10,6 +10,7 @@ import type { Request } from 'express';
 import { DomainError } from '../common/errors';
 import { OidcService, oidcConfigured } from './oidc.service';
 import { IdentityService } from './identity.service';
+import { orgContext } from '../common/org-context';
 
 /**
  * 請求身分脈絡。
@@ -64,14 +65,19 @@ export async function resolveUserContext(
   oidc: OidcService | undefined,
   identity: IdentityService | undefined,
 ): Promise<UserContext | null> {
+  // 綁定脈絡到 req 與請求範圍組織 store（供執行期 RLS 以 app.current_org 強制）。
+  const bind = (ctx: UserContext): UserContext => {
+    (req as unknown as { userContext?: UserContext }).userContext = ctx;
+    const store = orgContext.getStore();
+    if (store) store.orgId = ctx.orgId;
+    return ctx;
+  };
+
   const existing = (req as unknown as { userContext?: UserContext }).userContext;
-  if (existing) return existing;
+  if (existing) return bind(existing);
 
   const dev = extractDevContext(req);
-  if (dev) {
-    (req as unknown as { userContext?: UserContext }).userContext = dev;
-    return dev;
-  }
+  if (dev) return bind(dev);
 
   const token = bearerToken(req);
   if (token && oidc && identity) {
@@ -83,8 +89,7 @@ export async function resolveUserContext(
       clientId: typeof claims.azp === 'string' ? claims.azp : undefined,
       sourceIp: req.ip,
     });
-    (req as unknown as { userContext?: UserContext }).userContext = ctx;
-    return ctx;
+    return bind(ctx);
   }
 
   return null;

@@ -36,10 +36,12 @@ docker compose run --rm migrate # 套用 migrations + seed（一次性）
 
 - `db/apply.sh` 依序套用 `0001..0023`；`0023_rls.sql` 建立最小權限角色 `app_rw` 與
   org 隔離政策（GUC `app.current_org`，未設即 0 列，fail-closed）。
-- 正式以 `app_rw`（非 superuser）連線即啟用 RLS。**尚待的部署步驟**：為每個請求於交易內
-  設定 `SET LOCAL app.current_org`（`DatabaseService.withOrg` 已提供原語，請求管線接線為
-  後續工作）。在此之前以 superuser 連線（RLS 休眠、app 層 scope 檢查為主）。Neon 上請為
-  `app_rw` 設定密碼並授予連線。
+- 正式以 `app_rw`（非 superuser）連線並設 `RLS_ENFORCE=1` 即啟用執行期強制：
+  `OrgContextMiddleware` 於每個請求建立組織脈絡，守衛填入 orgId，`DatabaseService`
+  對每次查詢／交易以 `SET LOCAL app.current_org` 設定（各查詢獨立 client，與並行查詢共存，
+  交易結束自動還原、不外洩）。無脈絡即 0 列（fail-closed）。`RLS_ENFORCE` 未設（預設）時走
+  連線池、行為與先前一致，供以 superuser 連線的開發/CI 使用。Neon 上請為 `app_rw` 設定密碼
+  並授予連線，應用以該帳密連線並開 `RLS_ENFORCE=1`。
 - 連線字串 `DATABASE_URL` 於 Neon 需 `sslmode=require`。
 
 ## 4. 私有物件儲存
@@ -86,7 +88,7 @@ docker compose run --rm migrate # 套用 migrations + seed（一次性）
 
 - [ ] `OIDC_ISSUER/OIDC_AUDIENCE` 指向正式 IdP；首批使用者已於 DB 佈建並指派角色。
 - [ ] `DATABASE_URL` 指向受管 PG（Neon，`sslmode=require`）；migrations 已套用至 0023。
-- [ ] （強化）`app_rw` 連線 + 每請求 `app.current_org` 接線完成後切換。
+- [ ] 以 `app_rw` 帳密連線並設 `RLS_ENFORCE=1`，啟用執行期 RLS 強制（已接線）。
 - [ ] `STORAGE_DRIVER=s3` + R2/S3 憑證；bucket 為私有。
 - [ ] clamd 可達；確認掃描 fail-closed（故意送 EICAR 應被拒）。
 - [ ] TLS 於邊緣/反代終結；`/metrics` 受保護。
@@ -95,5 +97,5 @@ docker compose run --rm migrate # 套用 migrations + seed（一次性）
 
 ## 10. 仍屬後續（誠實揭露）
 
-- 每請求 `app.current_org` 於連線池之接線（啟用 `app_rw` 執行期強制）。
+- 真實雲端 provision（Neon / R2 / IdP 帳號與 secrets）由業主執行。
 - 300 併發實測、桌面 Microsoft Project UAT、完整無障礙認證需於近正式環境與真實帳號執行。

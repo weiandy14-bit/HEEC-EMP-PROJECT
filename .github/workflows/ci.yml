@@ -125,6 +125,9 @@ jobs:
       - name: Live dashboard performance (50 / 500 projects, 2.5M tasks)
         run: BASE="http://localhost:${PORT}/api/v1" node scripts/performance/dashboard.mjs
 
+      - name: Concurrent load harness smoke
+        run: BASE="http://localhost:${PORT}/api/v1" LOAD_VUS=50 LOAD_DURATION_S=8 node scripts/performance/load.mjs
+
       - name: Performance evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -25,11 +25,12 @@ export function tzOffsetMinutes(timezone: string, ref = new Date()): number {
     });
     const part = dtf.formatToParts(ref).find((p) => p.type === 'timeZoneName')?.value ?? 'GMT+8';
     const m = /GMT([+-])(\d{1,2})(?::(\d{2}))?/.exec(part);
-    if (!m) return 480;
+    if (part === 'GMT' || part === 'UTC') return 0;
+    if (!m) throw new Error('Unsupported timezone offset');
     const sign = m[1] === '-' ? -1 : 1;
     return sign * (Number(m[2]) * 60 + Number(m[3] ?? 0));
   } catch {
-    return 480;
+    throw DomainError.validation('工作日曆時區無效');
   }
 }
 

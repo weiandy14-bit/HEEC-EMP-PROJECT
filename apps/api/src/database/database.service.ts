@@ -38,11 +38,19 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     return rows[0] ?? null;
   }
 
-  /** 於單一交易內執行；自動 commit/rollback。 */
-  async transaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  /**
+   * 於單一交易內執行；自動 commit/rollback。
+   * 傳入 orgId 時，於交易內設定 app.current_org（SET LOCAL），使 row-level
+   * security 政策生效——正式環境以最小權限角色 app_rw 連線時，此 GUC 決定可見列
+   * （見 migration 0023）。GUC 為交易區域變數，交易結束即還原，不會外洩至連線池。
+   */
+  async transaction<T>(fn: (client: PoolClient) => Promise<T>, opts?: { orgId?: string }): Promise<T> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      if (opts?.orgId) {
+        await client.query("SELECT set_config('app.current_org', $1, true)", [opts.orgId]);
+      }
       const result = await fn(client);
       await client.query('COMMIT');
       return result;
@@ -52,6 +60,11 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     } finally {
       client.release();
     }
+  }
+
+  /** 以指定組織的 RLS 脈絡執行一段交易工作。 */
+  withOrg<T>(orgId: string, fn: (client: PoolClient) => Promise<T>): Promise<T> {
+    return this.transaction(fn, { orgId });
   }
 
   async healthy(): Promise<boolean> {

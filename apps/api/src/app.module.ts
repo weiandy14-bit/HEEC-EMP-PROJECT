@@ -1,6 +1,7 @@
 import {ExchangeModule} from './exchange/exchange.module';
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from './database/database.module';
+import { AuthModule } from './auth/auth.module';
 import { AuditModule } from './audit/audit.module';
 import { HealthModule } from './health/health.module';
 import { ProjectsModule } from './projects/projects.module';
@@ -17,6 +18,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 @Module({
   imports: [
     DatabaseModule,
+    AuthModule,
     AuditModule,
     HealthModule,
     ProjectsModule,

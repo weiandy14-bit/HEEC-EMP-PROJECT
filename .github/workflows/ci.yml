@@ -66,6 +66,9 @@ jobs:
       - name: Project exchange parser tests
         run: npm run test:exchange -w @heec/api
 
+      - name: Auth unit tests (OIDC JWT/JWKS verification)
+        run: npm run test:auth -w @heec/api
+
       - name: Web unit tests (頁 A 甘特 UI 與 UI 狀態)
         run: npm run test:web
 
